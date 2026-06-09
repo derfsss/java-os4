@@ -1,0 +1,1783 @@
+From 87c87fbe99dc7a6c185c6eb16b177ff0ddd105a4 Mon Sep 17 00:00:00 2001
+From: Richard Gibbs <wofderfs@googlemail.com>
+Date: Tue, 9 Jun 2026 22:30:57 +0100
+Subject: [PATCH] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
+
+JAmiga JamVM revival on ppc-amigaos-gcc 11.5 + clib4, plus OpenJDK 8
+(Temurin 8 rt.jar) class-library integration:
+- clib4 migration of os/amiga (dlopen natives, drop JAmiga pthread/signal shim)
+- openjdk classlib fixes: Amiga flat java.home, Thread.name char[]->String,
+  loadLibrary statMode "./", CDS JVM_GetResourceLookupCacheURLs/KnownToNotExist
+  stubs, NULL-safe boot-path accessors
+- cooperative VM exit (vm_exiting/terminateVMThreads), -Xbootclasspath handlers,
+  USE_ZIP malloc-read, [EXC] detailMessage diagnostic
+- runs `java -version`, headless HelloWorld, and a 25/25 conformance probe
+  (collections, threads, regex, reflection, lambdas/streams, zip, text/date)
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ .gitignore                          |   8 +
+ src/alloc.c                         |  31 ++++
+ src/arch.h                          | 139 +++++++++++++++
+ src/class.c                         |  83 ++++++++-
+ src/classlib/gnuclasspath/natives.c |   4 +
+ src/classlib/openjdk/class.c        |   4 +
+ src/classlib/openjdk/classlib.h     |   5 +
+ src/classlib/openjdk/dll.c          |   9 +-
+ src/classlib/openjdk/jvm.c          |  23 ++-
+ src/classlib/openjdk/properties.c   |  30 ++++
+ src/classlib/openjdk/thread.c       |   8 +
+ src/dll.c                           |   2 +
+ src/excep.c                         |  36 ++++
+ src/init.c                          |  93 +++++++---
+ src/jam.c                           |  48 +++++-
+ src/os/amiga/baseline_glue.c        |  28 ++++
+ src/os/amiga/os.c                   | 252 ++++++----------------------
+ src/os/amiga/powerpc/init.c         |  33 ++++
+ src/os/amiga/pthread.h              | 130 --------------
+ src/os/amiga/sched.h                |   5 -
+ src/os/amiga/signal.h               |  89 ----------
+ src/os/amiga/stdlib.h               |  30 ----
+ src/os/amiga/time.h                 |  20 ---
+ src/thread.c                        |  53 +++++-
+ src/zip.c                           |  43 ++++-
+ 25 files changed, 690 insertions(+), 516 deletions(-)
+ create mode 100644 .gitignore
+ create mode 100644 src/arch.h
+ create mode 100644 src/os/amiga/baseline_glue.c
+ delete mode 100644 src/os/amiga/pthread.h
+ delete mode 100644 src/os/amiga/sched.h
+ delete mode 100644 src/os/amiga/signal.h
+ delete mode 100644 src/os/amiga/stdlib.h
+ delete mode 100644 src/os/amiga/time.h
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..976d81c
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,8 @@
++
++# Build-generated (copied into src/ by tools/build-jamvm-*.sh per classlib variant)
++/src/classlib.h
++/src/classlib-defs.h
++/src/classlib-excep.h
++/src/classlib-symbol.h
++# Shelved JAmiga shim headers (backups)
++*.jamiga-shim-bak
+diff --git a/src/alloc.c b/src/alloc.c
+index 536c720..a1d972d 100644
+--- a/src/alloc.c
++++ b/src/alloc.c
+@@ -191,6 +191,12 @@ static VMLock registered_refs_lock;
+ static VMWaitLock run_finaliser_lock;
+ static VMWaitLock reference_lock;
+ 
++/* Cooperative VM-thread shutdown (AmigaOS/clib4 can't async-stop threads via
++   signals).  Set TRUE by terminateVMThreads(); the finalizer / reference-handler
++   loops check it after each condvar wait and exit, so clib4 exit() -- which waits
++   for all threads -- can complete instead of hanging on the never-ending daemons. */
++volatile int vm_exiting = FALSE;
++
+ /* A pointer to the finalizer thread. */
+ static Thread *finalizer_thread;
+ 
+@@ -1788,6 +1794,13 @@ void asyncGCThreadLoop(Thread *self) {
+     for(;;) {                                                                 \
+         waitVMWaitLock(list##_lock, self);                                    \
+                                                                               \
++        /* VM is shutting down: exit the loop so the thread terminates        \
++           (cooperative shutdown -- see vm_exiting / terminateVMThreads). */  \
++        if(vm_exiting) {                                                      \
++            unlockVMWaitLock(list##_lock, self);                              \
++            break;                                                            \
++        }                                                                     \
++                                                                              \
+         if((list##_start == list##_size) && (list##_end == 0))                \
+             continue;                                                         \
+                                                                               \
+@@ -1846,6 +1859,24 @@ void referenceHandlerThreadLoop(Thread *self) {
+                         "<GC: enqueuing %d references>\n", self, &self);
+ }
+ 
++/* Cooperative VM-thread shutdown.  Signal the finalizer and reference-handler
++   daemon threads to exit their loops (they wait on a condvar, so a normal notify
++   wakes them -- no signals needed), letting clib4 exit() complete.  Called from
++   the exit hook before the process terminates. */
++void terminateVMThreads() {
++    Thread *self = threadSelf();
++
++    vm_exiting = TRUE;
++
++    lockVMWaitLock(run_finaliser_lock, self);
++    notifyAllVMWaitLock(run_finaliser_lock, self);
++    unlockVMWaitLock(run_finaliser_lock, self);
++
++    lockVMWaitLock(reference_lock, self);
++    notifyAllVMWaitLock(reference_lock, self);
++    unlockVMWaitLock(reference_lock, self);
++}
++
+ int initialiseGC(InitArgs *args) {
+     /* Pre-allocate an OutOfMemoryError exception object - we throw it
+      * when we're really low on heap space, and can create FA... */
+diff --git a/src/arch.h b/src/arch.h
+new file mode 100644
+index 0000000..0d2fe78
+--- /dev/null
++++ b/src/arch.h
+@@ -0,0 +1,139 @@
++/*
++ * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2012
++ * Robert Lougher <rob@jamvm.org.uk>.
++ *
++ * This file is part of JamVM.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2,
++ * or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
++ */
++
++#define OS_ARCH "ppc"
++
++#define HANDLER_TABLE_T static const void
++#define DOUBLE_1_BITS 0x3ff0000000000000LL
++
++#define READ_DBL(v,p,l)	v = ((u8)p[0]<<56)|((u8)p[1]<<48)|((u8)p[2]<<40) \
++                            |((u8)p[3]<<32)|((u8)p[4]<<24)|((u8)p[5]<<16) \
++                            |((u8)p[6]<<8)|(u8)p[7]; p+=8
++
++/* Needed for i386 -- empty here */
++#define FPU_HACK
++
++#define COMPARE_AND_SWAP_32(addr, old_val, new_val) \
++({                                                  \
++    int result, read_val;                           \
++    __asm__ __volatile__ ("                         \
++                li %0,0\n                           \
++        1:      lwarx %1,0,%2\n                     \
++                cmpw %3,%1\n                        \
++                bne- 2f\n                           \
++                stwcx. %4,0,%2\n                    \
++                bne- 1b\n                           \
++                li %0,1\n                           \
++        2:"                                         \
++    : "=&r" (result), "=&r" (read_val)              \
++    : "r" (addr), "r" (old_val), "r" (new_val)      \
++    : "cc", "memory");                              \
++    result;                                         \
++})
++
++#ifdef __ppc64__
++#define COMPARE_AND_SWAP_64(addr, old_val, new_val) \
++({                                                  \
++    int result, read_val;                           \
++    __asm__ __volatile__ ("                         \
++                li %0,0\n                           \
++        1:      ldarx %1,0,%2\n                     \
++                cmpd %3,%1\n                        \
++                bne- 2f\n                           \
++                stdcx. %4,0,%2\n                    \
++                bne- 1b\n                           \
++                li %0,1\n                           \
++        2:"                                         \
++    : "=&r" (result), "=&r" (read_val)              \
++    : "r" (addr), "r" (old_val), "r" (new_val)      \
++    : "cc", "memory");                              \
++    result;                                         \
++})
++
++#define COMPARE_AND_SWAP(addr, old_val, new_val)    \
++        COMPARE_AND_SWAP_64(addr, old_val, new_val)
++#else
++#define COMPARE_AND_SWAP(addr, old_val, new_val)    \
++        COMPARE_AND_SWAP_32(addr, old_val, new_val)
++#endif
++
++#define LOCKWORD_READ(addr) *addr
++#define LOCKWORD_WRITE(addr, value) *addr = value
++#define LOCKWORD_COMPARE_AND_SWAP(addr, old_val, new_val) \
++        COMPARE_AND_SWAP(addr, old_val, new_val)
++
++#define CACHE_LINE_LEN 32
++
++#define FLUSH_CACHE(addr, length)                   \
++{                                                   \
++    uintptr_t end = ((uintptr_t) (addr)) + length;  \
++    uintptr_t start = ((uintptr_t) (addr))          \
++                      & ~(CACHE_LINE_LEN - 1);      \
++    uintptr_t i;                                    \
++                                                    \
++    for(i = start; i < end; i += CACHE_LINE_LEN)    \
++        __asm__ ("dcbst 0, %0" :: "r" (i));         \
++                                                    \
++    __asm__ ("sync");                               \
++                                                    \
++    for(i = start; i < end; i += CACHE_LINE_LEN)    \
++        __asm__ ("icbi 0, %0" :: "r" (i));          \
++                                                    \
++    __asm__ ("sync; isync");                        \
++}
++
++#define GEN_REL_JMP(target_addr, patch_addr, patch_size)     \
++({                                                           \
++    int patched = FALSE;                                     \
++                                                             \
++    if(patch_size >= 4) {                                    \
++        /* The check is done in two parts to ensure the      \
++           result is always positive, to guard against       \
++           the pointer difference being larger than the      \
++           signed range */                                   \
++        if(target_addr > patch_addr) {                       \
++            uintptr_t offset = (target_addr) - (patch_addr); \
++                                                             \
++            if(offset < 1<<25) {                             \
++                *(int*)(patch_addr) = offset & 0x3ffffff     \
++                                             | 0x48000000;   \
++                patched = TRUE;                              \
++            }                                                \
++        } else {                                             \
++            uintptr_t offset = (patch_addr) - (target_addr); \
++                                                             \
++            if(offset <= 1<<25) {                            \
++                *(int*)(patch_addr) = -offset & 0x3ffffff    \
++                                              | 0x48000000;  \
++                patched = TRUE;                              \
++            }                                                \
++        }                                                    \
++    }                                                        \
++    patched;                                                 \
++})
++
++#define MBARRIER() __asm__ __volatile__ ("sync" ::: "memory")
++#define JMM_LOCK_MBARRIER() __asm__ __volatile__ ("isync" ::: "memory")
++#ifdef __NO_LWSYNC__
++#define JMM_UNLOCK_MBARRIER() __asm__ __volatile__ ("sync" ::: "memory")
++#else
++#define JMM_UNLOCK_MBARRIER() __asm__ __volatile__ ("lwsync" ::: "memory")
++#endif
+diff --git a/src/class.c b/src/class.c
+index af81530..e0f4873 100644
+--- a/src/class.c
++++ b/src/class.c
+@@ -1480,6 +1480,10 @@ unlock:
+    objectUnlock(class);
+ }
+ 
++#ifdef __amigaos4__
++#include <proto/exec.h>
++#endif
++
+ Class *initClass(Class *class) {
+    ClassBlock *cb = CLASS_CB(class);
+    ConstantPool *cp = &cb->constant_pool;
+@@ -1549,8 +1553,51 @@ Class *initClass(Class *class) {
+ 
+    if((excep = exceptionOccurred())) {
+        Class *error;
++#ifdef __amigaos4__
++       {
++           /* detailMessage/vmState are inherited from java.lang.Throwable, so use
++              lookupField (searches superclasses), NOT findField (own fields only). */
++           FieldBlock *msgfb = lookupField(excep->class, newUtf8("detailMessage"),
++                                           newUtf8("Ljava/lang/String;"));
++           Object *msg = msgfb ? INST_DATA(excep, Object*, msgfb->u.offset)
++                               : NULL;
++           if(msg != NULL) {
++               char *c = String2Cstr(msg);
++               DebugPrintF("[CLINIT] %s <clinit> threw %s: %s\n",
++                           CLASS_CB(class)->name,
++                           CLASS_CB(excep->class)->name, c);
++               sysFree(c);
++           } else
++               DebugPrintF("[CLINIT] %s <clinit> threw %s (no message)\n",
++                           CLASS_CB(class)->name, CLASS_CB(excep->class)->name);
++
++           /* Dump the stack trace: Throwable.vmState (VMThrowable) -> backtrace,
++              an int[] of (MethodBlock*, pc) pairs (see classlib .../excep.c). */
++           {
++               FieldBlock *vmsfb = lookupField(excep->class, newUtf8("vmState"),
++                                       newUtf8("Ljava/lang/VMThrowable;"));
++               Object *vmt = vmsfb ? INST_DATA(excep, Object*, vmsfb->u.offset)
++                                   : NULL;
++               FieldBlock *btfb = vmt ? findField(vmt->class, SYMBOL(backtrace),
++                                                  newUtf8("[I")) : NULL;
++               Object *bt = btfb ? INST_DATA(vmt, Object*, btfb->u.offset) : NULL;
++               if(bt != NULL) {
++                   uintptr_t *d = ARRAY_DATA(bt, uintptr_t);
++                   int i, len = ARRAY_LEN(bt);
++                   for(i = 0; i < len && i < 24; i += 2) {
++                       MethodBlock *m = (MethodBlock*)d[i];
++                       if(m == NULL) break;
++                       DebugPrintF("[CLINIT]   at %s.%s\n",
++                                   CLASS_CB(m->class)->name, m->name);
++                   }
++               } else
++                   DebugPrintF("[CLINIT]   (no backtrace: vmt=%p btfb=%p)\n",
++                               vmt, btfb);
++           }
++       }
++#endif
+ 
+-       clearException(); 
++       clearException();
+ 
+        /* Don't wrap exceptions of type java.lang.Error... */
+        error = findSystemClass0(SYMBOL(java_lang_Error));
+@@ -2135,6 +2182,10 @@ void freeClassLoaderData(Object *class_loader) {
+     }
+ }
+ 
++#ifdef __amigaos4__
++#include <proto/exec.h>
++#endif
++
+ void parseBootClassPath() {
+     char *cp, *pntr, *start;
+     int i, j, len, max = 0;
+@@ -2142,6 +2193,9 @@ void parseBootClassPath() {
+ 
+     cp = sysMalloc(strlen(bootpath)+1);
+     strcpy(cp, bootpath);
++#ifdef __amigaos4__
++    DebugPrintF("[BCP] bootpath='%s'\n", bootpath);
++#endif
+ 
+     for(i = 0, start = pntr = cp; *pntr; pntr++) {
+         if(*pntr == ':') {
+@@ -2164,16 +2218,26 @@ void parseBootClassPath() {
+         start = pntr;
+         pntr += (len = strlen(pntr))+1;
+ 
+-        if(stat(start, &info) == 0) {
++      {
++        int _sr = stat(start, &info);
++#ifdef __amigaos4__
++        DebugPrintF("[BCP] entry='%s' stat=%d\n", start, _sr);
++#endif
++        if(_sr == 0) {
+             if(S_ISDIR(info.st_mode)) {
+                 bootclasspath[j].zip = NULL;
+                 if(len > max)
+                     max = len;
+             } else
+-                if((bootclasspath[j].zip = processArchive(start)) == NULL)
++                if((bootclasspath[j].zip = processArchive(start)) == NULL) {
++#ifdef __amigaos4__
++                    DebugPrintF("[BCP] processArchive FAILED '%s'\n", start);
++#endif
+                     continue;
++                }
+             bootclasspath[j++].path = start;
+         }
++      }
+     }
+ 
+     max_cp_element_len = max;
+@@ -2182,8 +2246,19 @@ void parseBootClassPath() {
+ 
+ void setClassPath(InitArgs *args) {
+     char *env;
+-    classpath = args->classpath ? args->classpath : 
++#ifdef __amigaos4__
++    /* Default to an EMPTY app classpath, not "." -- on AmigaOS "." canonicalises
++       to the volume path (e.g. "AmigaOS:Test"), which sun.misc.Launcher's
++       URLClassPath then mangles (':' = path.separator vs Amiga "volume:") /
++       mis-converts to a URL ("volume:" looks like a scheme).  An empty
++       java.class.path gives the AppClassLoader no entries to choke on; the app
++       class is supplied on -Xbootclasspath and found via bootstrap delegation. */
++    classpath = args->classpath ? args->classpath :
++                 ((env = getenv("CLASSPATH")) ? env : "");
++#else
++    classpath = args->classpath ? args->classpath :
+                  ((env = getenv("CLASSPATH")) ? env : ".");
++#endif
+ }
+ 
+ char *getClassPath() {
+diff --git a/src/classlib/gnuclasspath/natives.c b/src/classlib/gnuclasspath/natives.c
+index ca95e00..f99f293 100644
+--- a/src/classlib/gnuclasspath/natives.c
++++ b/src/classlib/gnuclasspath/natives.c
+@@ -39,6 +39,10 @@
+ #include "reflect.h"
+ #include "gnuclasspath.h"
+ 
++#ifdef __amigaos4__
++#include <proto/exec.h>
++#endif
++
+ static int pd_offset;
+ 
+ int classlibInitialiseNatives() {
+diff --git a/src/classlib/openjdk/class.c b/src/classlib/openjdk/class.c
+index 3206ed0..09fc556 100644
+--- a/src/classlib/openjdk/class.c
++++ b/src/classlib/openjdk/class.c
+@@ -130,6 +130,10 @@ char *classlibDefaultBootClassPath() {
+     char *path, *pntr;
+     int i, j, len = 0;
+ 
++    /* Pre-init (java -version), getJavaHome() is NULL -- avoid sprintf("%s",NULL). */
++    if(java_home == NULL)
++        return NULL;
++
+     for(i = 0; entries[i] != NULL; i++)
+         len += strlen(entries[i]);
+ 
+diff --git a/src/classlib/openjdk/classlib.h b/src/classlib/openjdk/classlib.h
+index 054afe4..8e85682 100644
+--- a/src/classlib/openjdk/classlib.h
++++ b/src/classlib/openjdk/classlib.h
+@@ -35,7 +35,12 @@ extern Object *classlibMarkThreadTerminated(Object *jThread);
+ 
+ #define classlibThreadIdName() SYMBOL(tid)
+ #define classlibAddThreadName() SYMBOL(add)
++#if OPENJDK_VERSION >= 8
++/* OpenJDK 8 changed java.lang.Thread.name from char[] to String. */
++#define classlibThreadNameType() SYMBOL(sig_java_lang_String)
++#else
+ #define classlibThreadNameType() SYMBOL(array_C)
++#endif
+ #define classlibRemoveThreadName() SYMBOL(removeThreadName)
+ #define classlibExceptionHandlerName() SYMBOL(uncaughtExceptionHandler)
+ 
+diff --git a/src/classlib/openjdk/dll.c b/src/classlib/openjdk/dll.c
+index 1d9cc9c..bd9a8b8 100644
+--- a/src/classlib/openjdk/dll.c
++++ b/src/classlib/openjdk/dll.c
+@@ -43,8 +43,15 @@ int classlibInitialiseDll() {
+ 
+ char *classlibDefaultBootDllPath() {
+     char *java_home = getJavaHome();
+-    char *dll_path = sysMalloc(strlen(java_home) + sizeof("/lib/"OS_ARCH));
++    char *dll_path;
+ 
++    /* java.home is only set during initVM; showVersionAndCopyright() (java
++       -version) calls this pre-init, when getJavaHome() returns NULL.  Return
++       NULL rather than strlen(NULL)-crashing -- the caller handles it. */
++    if(java_home == NULL)
++        return NULL;
++
++    dll_path = sysMalloc(strlen(java_home) + sizeof("/lib/"OS_ARCH));
+     return strcat(strcpy(dll_path, java_home), "/lib/"OS_ARCH);
+ }
+ 
+diff --git a/src/classlib/openjdk/jvm.c b/src/classlib/openjdk/jvm.c
+index 971ac75..bfbbb93 100644
+--- a/src/classlib/openjdk/jvm.c
++++ b/src/classlib/openjdk/jvm.c
+@@ -3034,7 +3034,28 @@ jint JVM_FindSignal(const char *name) {
+ 
+     TRACE("JVM_FindSignal(name=%s)", name);
+ 
+-    for(i = 0; signals[i].name != NULL && strcmp(signals[i].name, name); i++); 
++    for(i = 0; signals[i].name != NULL && strcmp(signals[i].name, name); i++);
+ 
+     return signals[i].number;
+ }
++
++/* Class-Data-Sharing (CDS) shared class-path lookup cache.  JamVM has no CDS, so
++   report "no cache": getLookupCacheURLs returning NULL makes sun.misc.URLClassPath
++   disable the cache cleanly (URLClassPath.java:322->331).  These JVM_* were missing
++   from the classlib -- libjava.so's sun/misc/URLClassPath.c calls them, so the
++   unresolved symbols crashed sun.misc.Launcher init on AmigaOS. */
++jobjectArray JVM_GetResourceLookupCacheURLs(JNIEnv *env, jobject loader) {
++    TRACE("JVM_GetResourceLookupCacheURLs(loader=%p)", loader);
++    return NULL;
++}
++
++jintArray JVM_GetResourceLookupCache(JNIEnv *env, jobject loader,
++                                     const char *resource_name) {
++    TRACE("JVM_GetResourceLookupCache(loader=%p, name=%s)", loader, resource_name);
++    return NULL;
++}
++
++jboolean JVM_KnownToNotExist(JNIEnv *env, jobject loader, const char *classname) {
++    TRACE("JVM_KnownToNotExist(loader=%p, name=%s)", loader, classname);
++    return JNI_FALSE;
++}
+diff --git a/src/classlib/openjdk/properties.c b/src/classlib/openjdk/properties.c
+index 2391e61..481963b 100644
+--- a/src/classlib/openjdk/properties.c
++++ b/src/classlib/openjdk/properties.c
+@@ -21,6 +21,35 @@
+ #include <string.h>
+ #include "jam.h"
+ 
++#ifdef __amigaos4__
++/* On AmigaOS the runtime layout is FLAT -- libjvm.so, libjava.so and the boot
++   jars all live in one directory (e.g. SYS:Test/), not the Unix
++   <java.home>/lib/<arch>/<vmtype>/libjvm.so tree.  So java.home is simply the
++   directory containing libjvm.so (strip the trailing filename after the last
++   '/' or ':' volume separator).  Boot class/library paths are supplied
++   explicitly via -Xbootclasspath and -Dsun.boot.library.path, so they don't
++   depend on the (Unix-shaped) java.home/lib/... derivation. */
++char *classlibDefaultJavaHome() {
++    char *path = nativeJVMPath();
++    char *pntr, *home;
++
++    if(path == NULL)
++        return NULL;
++
++    pntr = path + strlen(path);
++    while(pntr > path && pntr[-1] != '/' && pntr[-1] != ':')
++        pntr--;
++    if(pntr > path && pntr[-1] == '/')   /* keep volume ':' but drop dir '/' */
++        pntr--;
++
++    home = sysMalloc(pntr - path + 1);
++    memcpy(home, path, pntr - path);
++    home[pntr - path] = '\0';
++    sysFree(path);
++
++    return home;
++}
++#else
+ char *classlibDefaultJavaHome() {
+     char *path = nativeJVMPath();
+     char *pntr = path + strlen(path);
+@@ -42,4 +71,5 @@ char *classlibDefaultJavaHome() {
+ 
+     return home;
+ }
++#endif
+ 
+diff --git a/src/classlib/openjdk/thread.c b/src/classlib/openjdk/thread.c
+index 71fc8aa..8a7c303 100644
+--- a/src/classlib/openjdk/thread.c
++++ b/src/classlib/openjdk/thread.c
+@@ -160,6 +160,13 @@ void classlibSetThreadState(Thread *thread, int state) {
+ 
+ void classlibThreadName2Buff(Object *jThread, char *buffer, int buff_len) {
+     Object *name = INST_DATA(jThread, Object*, name_offset);
++#if OPENJDK_VERSION >= 8
++    /* OpenJDK 8: Thread.name is a String, not a char[]. */
++    if(name == NULL)
++        buffer[0] = '\0';
++    else
++        String2Buff(name, buffer, buff_len);
++#else
+     unsigned short *unicode = ARRAY_DATA(name, unsigned short);
+     int i, len = ARRAY_LEN(name) < buff_len ? ARRAY_LEN(name)
+                                             : buff_len - 1;
+@@ -168,6 +175,7 @@ void classlibThreadName2Buff(Object *jThread, char *buffer, int buff_len) {
+         buffer[i] = unicode[i];
+ 
+     buffer[len] = '\0';
++#endif
+ }
+ 
+ static sem_t signal_sem;
+diff --git a/src/dll.c b/src/dll.c
+index 3604fcf..654c63c 100644
+--- a/src/dll.c
++++ b/src/dll.c
+@@ -224,6 +224,8 @@ uintptr_t *resolveNativeWrapper(Class *class, MethodBlock *mb,
+     NativeMethod method = resolveNativeMethod(mb);
+ 
+     if(method == NULL) {
++        jam_fprintf(stderr, "[UNSATISFIED] %s.%s %s\n",
++                    CLASS_CB(mb->class)->name, mb->name, mb->type);
+         signalException(java_lang_UnsatisfiedLinkError, mb->name);
+         return ostack;
+     }
+diff --git a/src/excep.c b/src/excep.c
+index bf88d59..c663143 100644
+--- a/src/excep.c
++++ b/src/excep.c
+@@ -151,10 +151,46 @@ Object *exceptionEnumToException(int excep_enum) {
+     return exceptions[excep_enum];
+ }
+ 
++#ifdef __amigaos4__
++#include <proto/exec.h>
++#endif
++
+ void printException() {
+     ExecEnv *ee = getExecEnv();
+     Object *excep = ee->exception;
+ 
++#ifdef __amigaos4__
++    /* clib4 bring-up: Java printStackTrace fails when System.err isn't set up,
++       hiding the real cause. Dump the exception chain (class names) to serial. */
++    if(excep != NULL) {
++        Object *e = excep;
++        int d;
++        for(d = 0; e != NULL && d < 8; d++) {
++            FieldBlock *fb;
++            Object *c;
++            DebugPrintF("[EXC] %d: %s\n", d, CLASS_CB(e->class)->name);
++            {
++                FieldBlock *mfb = findField(e->class, newUtf8("detailMessage"),
++                                            newUtf8("Ljava/lang/String;"));
++                Object *msg = mfb ? INST_DATA(e, Object*, mfb->u.offset) : NULL;
++                if(msg != NULL) {
++                    char *m = String2Cstr(msg);
++                    DebugPrintF("[EXC]    msg: %s\n", m);
++                    sysFree(m);
++                }
++            }
++            fb = findField(e->class, newUtf8("cause"),
++                           newUtf8("Ljava/lang/Throwable;"));
++            if(fb == NULL)
++                break;
++            c = INST_DATA(e, Object*, fb->u.offset);
++            if(c == NULL || c == e)
++                break;
++            e = c;
++        }
++    }
++#endif
++
+     if(excep != NULL) {
+         MethodBlock *mb = lookupMethod(excep->class, SYMBOL(printStackTrace),
+                                                      SYMBOL(___V));
+diff --git a/src/init.c b/src/init.c
+index 32539cf..0ca5ee1 100644
+--- a/src/init.c
++++ b/src/init.c
+@@ -26,7 +26,8 @@
+ 
+ #include "jam.h"
+ 
+-static int VM_initing = TRUE;
++/* Not static: os/amiga/scanprocess.c references VM_initing via `extern int`. */
++int VM_initing = TRUE;
+ extern void initialisePlatform();
+ 
+ unsigned long clampHeapLimit(long long limit) {
+@@ -34,6 +35,36 @@ unsigned long clampHeapLimit(long long limit) {
+     return (unsigned long)MIN(clamp, MAX_MAX_HEAP);
+ }
+ 
++/* clib4 bring-up: route all JamVM messages (args->vfprintf) to the serial
++   debug log, since AmigaDOS stderr isn't easily captured. Remove once stable. */
++#ifdef __amigaos4__
++#include <proto/exec.h>
++#include <unistd.h>
++static int amiga_vfprintf(FILE *stream, const char *fmt, va_list ap) {
++    char buf[1024];
++    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
++    (void)stream;
++    DebugPrintF("%s", buf);
++    return n;
++}
++
++/* clib4 exit() HANGS during VM shutdown: it waits for all threads to terminate
++   before tearing down the shared clib4 context, but JamVM's daemon threads loop
++   forever and can't be async-stopped (clib4 pthread_kill only Signal()s a raw
++   Exec bit, never running the sigaction handler).  Cooperative fix: tell the
++   finalizer/reference-handler threads to exit (terminateVMThreads notifies their
++   condvars; vm_exiting makes the loops return), and skip the signal-handler thread
++   entirely on AmigaOS (see thread.c).  With the daemons exiting, clib4 exit() can
++   complete cleanly.  Output already went out via raw write() syscalls. */
++extern void terminateVMThreads(void);
++static void amiga_exit(int status) {
++    DebugPrintF("[EXIT] amiga_exit(%d): terminating VM threads\n", status);
++    terminateVMThreads();
++    DebugPrintF("[EXIT] amiga_exit: calling exit()\n");
++    exit(status);
++}
++#endif
++
+ /* Setup default values for command line args */
+ 
+ void setDefaultInitArgs(InitArgs *args) {
+@@ -65,9 +96,17 @@ void setDefaultInitArgs(InitArgs *args) {
+ 
+     args->props_count = 0;
+ 
++#ifdef __amigaos4__
++    args->vfprintf = amiga_vfprintf;
++#else
+     args->vfprintf = vfprintf;
++#endif
+     args->abort    = abort;
++#ifdef __amigaos4__
++    args->exit     = amiga_exit;
++#else
+     args->exit     = exit;
++#endif
+ 
+ #ifdef INLINING
+     args->replication_threshold = 10;
+@@ -89,34 +128,46 @@ int VMInitialising() {
+     return VM_initing;
+ }
+ 
++/* Temporary clib4 bring-up tracing: emit each initVM stage to the serial
++   debug log (DebugPrintF) so the last printed stage identifies a failing one.
++   Remove once Hello World runs. */
++#ifdef __amigaos4__
++#include <proto/exec.h>
++#define JVTRACE(s) DebugPrintF("[JV] %s\n", (s))
++#else
++#define JVTRACE(s)
++#endif
++
+ int initVM(InitArgs *args) {
+     int status;
+ 
+     /* Perform platform dependent initialisation */
++    JVTRACE("initialisePlatform");
+     initialisePlatform();
+ 
+     /* Initialise the VM modules -- ordering is important! */
+ 
+-    status = initialiseHooks(args) &&
+-             initialiseProperties(args) &&
+-             initialiseAlloc(args) &&
+-             initialiseThreadStage1(args) &&
+-             initialiseUtf8() &&
+-             initialiseSymbol() &&
+-             initialiseClassStage1(args) &&
+-             initialiseDll(args) &&
+-             initialiseMonitor() &&
+-             initialiseString() &&
+-             initialiseException() &&
+-             initialiseNatives() &&
+-             initialiseAccess() &&
+-             initialiseFrame() &&
+-             initialiseJNI() &&
+-             initialiseInterpreter(args) &&
+-             initialiseClassStage2() &&
+-             initialiseThreadStage2(args) &&
+-             initialiseGC(args);
+-
++    status = (JVTRACE("hooks"),          initialiseHooks(args)) &&
++             (JVTRACE("properties"),     initialiseProperties(args)) &&
++             (JVTRACE("alloc"),          initialiseAlloc(args)) &&
++             (JVTRACE("threadStage1"),   initialiseThreadStage1(args)) &&
++             (JVTRACE("utf8"),           initialiseUtf8()) &&
++             (JVTRACE("symbol"),         initialiseSymbol()) &&
++             (JVTRACE("classStage1"),    initialiseClassStage1(args)) &&
++             (JVTRACE("dll"),            initialiseDll(args)) &&
++             (JVTRACE("monitor"),        initialiseMonitor()) &&
++             (JVTRACE("string"),         initialiseString()) &&
++             (JVTRACE("exception"),      initialiseException()) &&
++             (JVTRACE("natives"),        initialiseNatives()) &&
++             (JVTRACE("access"),         initialiseAccess()) &&
++             (JVTRACE("frame"),          initialiseFrame()) &&
++             (JVTRACE("jni"),            initialiseJNI()) &&
++             (JVTRACE("interpreter"),    initialiseInterpreter(args)) &&
++             (JVTRACE("classStage2"),    initialiseClassStage2()) &&
++             (JVTRACE("threadStage2"),   initialiseThreadStage2(args)) &&
++             (JVTRACE("gc"),             initialiseGC(args));
++
++    JVTRACE("initVM done");
+     VM_initing = FALSE;
+     return status;
+ }
+diff --git a/src/jam.c b/src/jam.c
+index 052f84a..2951d20 100644
+--- a/src/jam.c
++++ b/src/jam.c
+@@ -107,15 +107,25 @@ void showVersionAndCopyright() {
+     printf("but WITHOUT ANY WARRANTY; without even the implied warranty of\n");
+     printf("MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n");
+     printf("GNU General Public License for more details.\n");
+-    printf("\nBuild information:\n\nExecution Engine: %s\n",
+-           getExecutionEngineName());
++    {
++        /* These classlib accessors can return NULL before the VM is initialised
++           (the openjdk classlib derives them from java.home/VM state set up in
++           initVM, but -version is handled here in parseCommandLine, pre-init).
++           printf("%s", NULL) crashes clib4's vfprintf, so guard them. */
++        char *engine = getExecutionEngineName();
++        char *boot_dll = classlibDefaultBootDllPath();
++        char *boot_cp = classlibDefaultBootClassPath();
++
++        printf("\nBuild information:\n\nExecution Engine: %s\n",
++               engine ? engine : "(unknown)");
+ 
+ #if defined(__GNUC__) && defined(__VERSION__)
+-    printf("Compiled with: gcc %s\n", __VERSION__);
++        printf("Compiled with: gcc %s\n", __VERSION__);
+ #endif
+ 
+-    printf("\nBoot Library Path: %s\n", classlibDefaultBootDllPath());
+-    printf("Boot Class Path: %s\n", classlibDefaultBootClassPath());
++        printf("\nBoot Library Path: %s\n", boot_dll ? boot_dll : "(unset)");
++        printf("Boot Class Path: %s\n", boot_cp ? boot_cp : "(unset)");
++    }
+ }
+ 
+ void showFullVersion() {
+@@ -212,6 +222,18 @@ int parseCommandLine(int argc, char *argv[], InitArgs *args) {
+                 } else if(strncmp(argv[i], "-Xbootclasspath/v:", 18) == 0) {
+                     args->bootpath_v = argv[i] + 18;
+ 
++                /* These plain/append/prepend forms were missing in the JAmiga
++                   fork, so -Xbootclasspath: was silently ignored and the VM
++                   fell back to the (non-existent) default JAmiga: boot path. */
++                } else if(strncmp(argv[i], "-Xbootclasspath/a:", 18) == 0) {
++                    args->bootpath_a = argv[i] + 18;
++
++                } else if(strncmp(argv[i], "-Xbootclasspath/p:", 18) == 0) {
++                    args->bootpath_p = argv[i] + 18;
++
++                } else if(strncmp(argv[i], "-Xbootclasspath:", 16) == 0) {
++                    args->bootpath = argv[i] + 16;
++
+                 /* Compatibility options */
+                 } else if(strcmp(argv[i], "-client") == 0 ||
+                           strcmp(argv[i], "-server") == 0) {
+@@ -251,10 +273,24 @@ int main(int argc, char *argv[]) {
+         exit(1);
+     }
+ 
+-   if((system_loader = getSystemClassLoader()) == NULL)
++#ifdef __amigaos4__
++    /* The OpenJDK system classloader (sun.misc.Launcher) now INITIALISES cleanly
++       on AmigaOS -- the hard crash in getSystemClassLoader was the missing CDS
++       JVM_GetResourceLookupCacheURLs/JVM_KnownToNotExist (libjava.so called the
++       unresolved symbols); those are now stubbed (return NULL/FALSE) in jvm.c.
++       HOWEVER running the app class THROUGH the system loader still has a latent
++       bug (HelloWorld loads + main returns but produces no output; a heisenbug
++       that the [NM] debug trace masked -> suspect memory corruption / GC on the
++       much larger Launcher/URLClassPath code path).  So for now keep the reliable
++       BOOTSTRAP path (app class on -Xbootclasspath).  TODO(Phase 3): debug the
++       system-loader run path + Amiga path->URL for real -classpath. */
++    system_loader = NULL;
++#else
++    if((system_loader = getSystemClassLoader()) == NULL)
+         goto error;
+ 
+     mainThreadSetContextClassLoader(system_loader);
++#endif
+ 
+     for(cpntr = argv[class_arg]; *cpntr; cpntr++)
+         if(*cpntr == '.')
+diff --git a/src/os/amiga/baseline_glue.c b/src/os/amiga/baseline_glue.c
+new file mode 100644
+index 0000000..c15dc04
+--- /dev/null
++++ b/src/os/amiga/baseline_glue.c
+@@ -0,0 +1,28 @@
++/*
++ * baseline_glue.c -- small definitions needed to complete the newlib baseline
++ * link of JAmiga JamVM that are absent from the 2016 Amiga port / the current
++ * SDK.  Keep these together so they are easy to find and remove/replace as the
++ * real implementations land (clib4 migration, JNI native loading, etc.).
++ * See docs/revival-notes.md.
++ */
++#include <stdint.h>
++
++/* init.c uses this for default heap sizing.  bsd/darwin os.c return 0 ("TBD");
++ * the Amiga os.c never defined it.  0 keeps JamVM on its built-in defaults. */
++long long nativePhysicalMemory(void) {
++    return 0;
++}
++
++/* interp.c (executeJava: tableswitch/lookupswitch) calls ntohl to read
++ * big-endian bytecode operands.  <arpa/inet.h> declares it but no impl is
++ * linked under newlib.  AmigaOS 4 PPC is big-endian, so these are identities. */
++uint32_t ntohl(uint32_t x) { return x; }
++uint16_t ntohs(uint16_t x) { return x; }
++uint32_t htonl(uint32_t x) { return x; }
++uint16_t htons(uint16_t x) { return x; }
++
++/* scanprocess.c calls this at shutdown to unload boot-classloader native libs.
++ * Not defined in the JAmiga tree; stub for the baseline (native lib loading is
++ * itself stubbed via proto/nativelib.h until restored). */
++void unloadBootClassLoaderDlls(void) {
++}
+diff --git a/src/os/amiga/os.c b/src/os/amiga/os.c
+index 5561c20..aa1237b 100644
+--- a/src/os/amiga/os.c
++++ b/src/os/amiga/os.c
+@@ -19,241 +19,95 @@
+  * Foundation, 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+  */
+ 
++/*
++ * AmigaOS 4 os layer, clib4 variant.
++ *
++ * Reworked for the clib4 migration: native library loading now uses standard
++ * clib4 dlopen/dlsym (ELF .so), replacing JAmiga's lost nativelib.library ABI.
++ * Threads/signals/mmap/scandir are provided by clib4 directly (the JAmiga
++ * pthread.c/signal.c/scandir.c/memory.c shims are no longer built). This mirrors
++ * JamVM's os/linux/os.c.
++ */
++
+ #include "jamvm_rev.h"
+ #undef VERSION
+ 
+ #include <string.h>
++#include <stdlib.h>
++#include <unistd.h>
+ #define USE_MALLOC 1
+ #define JA_TARGETOS JA_AMIGAOS4
+ 
+ #include "../../jam.h"
+ 
+-//#include "MemGuardian.h"
+ #include <proto/exec.h>
+-#include <proto/utility.h>
+ #include <proto/dos.h>
+-#include <proto/nativelib.h>
+-#define VERSIONTAG VERSTAG" AmigaOS 4 build of "PACKAGE" "VERSION" "
+-STRPTR USED ver = (STRPTR)VERSIONTAG;
+-
+-/**
+- * Struct from JAmiga JNI library definition.
+- */
+-struct JNINativeMethod {
+-    char *className;
+-    char *methodName;
+-    char *methodDescriptor;
+-    void *fnPtr;
+-    int flags;
+-};
+-
+-struct JNINativeLibrary {
+-    char *name;
+-    int version;
+-    int numberOfMethods;
+-    struct JNINativeMethod *methods;
+-};
+ 
++#define __USE_GNU
++#include <dlfcn.h>
++#include <pthread.h>
+ 
+-/**
+- * Internal struct for native methods
+- * with mangled symbol name.
+- */
+-struct JamNativeMethodSymbol {
+-    char *symbolName;
+-    void *fnPtr;
+-};
+-
++#define VERSIONTAG VERSTAG" AmigaOS 4 build of "PACKAGE" "VERSION" "
++STRPTR USED ver = (STRPTR)VERSIONTAG;
+ 
+-/**
+- * Internal struct for list of native methods
+- * with mangled symbol names.
+- */
+-struct JamLibraryInfo {
+-    char *name;
+-    int numberOfMethods;
+-    //
+-    struct JamNativeMethodSymbol * nativeMethods;
+-    struct Library *osLib;
+-#if (JA_TARGETOS==JA_AMIGAOS4)
+-        struct Interface *osIFace;
+-#endif
+-} JamLibraryInfo ;
++long long nativePhysicalMemory() {
++    /* Report a modest figure so the default heap (phys/4) stays small: clib4's
++       mmap currently fails for very large MAP_ANON regions (a multi-hundred-MB
++       default heap from reporting true RAM aborts initialiseAlloc). 64 MB ->
++       16 MB default max heap, which clib4 mmap handles. -Xmx overrides this.
++       TODO: investigate clib4 large-mmap limit and raise this. */
++    return 64LL * 1024 * 1024;
++}
+ 
+ void *nativeStackBase() {
+-    DebugPrintF("Native stack base\n");
++    /* No portable pthread_getattr_np in clib4; let JamVM fall back (as the
++       uclibc path does).  Revisit if main-thread GC root scanning needs it. */
+     return NULL;
+ }
+ 
+ int nativeAvailableProcessors() {
+-    DebugPrintF("Native avail processorn");
+     return 1;
+ }
+ 
+-char *nativeLibPath() {
+-    return getenv("LD_LIBRARY_PATH");
++char *nativeLibError() {
++    return dlerror();
+ }
+ 
+-
+-char* nativeLibError() {
+-    return "Misc error";
++char *nativeLibPath() {
++    return getenv("LD_LIBRARY_PATH");
+ }
+ 
+-extern char *mangleString(char *utf8);
+-/**
+- *
+- */
+ void *nativeLibOpen(char *path) {
+-    char * tempName;
+-    char * tempType;
+-    char * osName = NULL;
+-    struct JNINativeLibrary * nativeInfo;
+-    struct JamLibraryInfo* libraryInfo;
+-    struct Library *myLib;
+-    int j, len, i;
+-#if (JA_TARGETOS==JA_AMIGAOS4)
+-    struct NativelibIFace *INativelib;
+-#endif
+-    
+-    myLib = OpenLibrary(path, 0);
+-    if(!myLib) {
+-
+-        JA_TRACE("Cannot open Library %s\n", path);
+-        return NULL;
+-    }
+-    #if (JA_TARGETOS==JA_AMIGAOS4)
+-    // Get Interface
+-    INativelib = (struct NativelibIFace*)GetInterface(myLib, "main", 1, NULL);
+-    if(!INativelib) {
+-        JA_TRACE("Cannot get interface for library %s\n", osName);
+-        CloseLibrary(myLib);
+-        return NULL;
+-    }
+-    #endif
+-
+-
+-    // Obtain pointer array to native methods
+-    nativeInfo = (APTR)GetLibraryContent();
+-
+-    if(!nativeInfo) {
+-        #if (JA_TARGETOS==JA_AMIGAOS4)
+-        DropInterface(INativelib);
+-        INativelib = NULL;
+-        #endif
+-        CloseLibrary(myLib);
+-        sysFree(libraryInfo);
+-        return NULL;
+-    }
+-    libraryInfo = sysMalloc(sizeof(struct JamLibraryInfo));
+-
+-    #if (JA_TARGETOS==JA_AMIGAOS4)
+-    libraryInfo->osIFace = (struct Interface*)INativelib;
+-    #endif
+-    JA_TRACE("Openend \"%s\", version %ld.%ld\n", myLib->lib_Node.ln_Name, myLib->lib_Version, myLib->lib_Revision);
+-    libraryInfo->osLib = myLib;
+-    libraryInfo->name = myLib->lib_Node.ln_Name;
+-
+-
+-    libraryInfo->numberOfMethods = nativeInfo->numberOfMethods;
+-
+-    len=(sizeof(struct JamNativeMethodSymbol)) * libraryInfo->numberOfMethods;
+-    libraryInfo->nativeMethods = sysMalloc(len);
+-    for(j=0; j < libraryInfo->numberOfMethods; j++) {
+-        // calculate length of the full method descriptor. Add 3 to cater fot separators
+-        len = strlen(nativeInfo->methods[j].className)+
+-                                strlen(nativeInfo->methods[j].methodDescriptor)+
+-                                strlen(nativeInfo->methods[j].methodName)+3;
+-        tempName = sysMalloc(len);
+-        tempName[0] = '\0';
+-        strcat(tempName, nativeInfo->methods[j].className);
+-        strcat(tempName, "/");
+-        strcat(tempName, nativeInfo->methods[j].methodName);
+-
+-        strcat(tempName, "/");
+-        strcat(tempName, "/");
+-        // find the last (
+-        strcat(tempName, nativeInfo->methods[j].methodDescriptor+1);
+-
+-        for(i = strlen(tempName)-1; tempName[i] != ')'; i--);
+-        tempName[i] = '\0';
+-        if(tempName[i - 1] == '(') {
+-            // we have sig (), which measn no sig, and no need
+-            // for the two extra // added above.
+-            tempName[i - 3] = '\0';
+-        }
+-
+-        
+-        libraryInfo->nativeMethods[j].fnPtr = nativeInfo->methods[j].fnPtr;
+-        libraryInfo->nativeMethods[j].symbolName = mangleString(tempName);
+-        sysFree(tempName);
+-    }
+-
+-    return libraryInfo;
++    void *h = dlopen(path, RTLD_LAZY);
++    DebugPrintF("[DLOPEN] '%s' -> %p%s\n", path, h,
++                h ? "" : " FAILED");
++    return h;
+ }
+ 
+ void nativeLibClose(void *handle) {
+-    struct JamLibraryInfo* libraryInfo = handle;
+-    int j = 0;
+-    
+-#if (JA_TARGETOS==JA_AMIGAOS4)
+-    DropInterface(libraryInfo->osIFace);
+-#endif
+-    CloseLibrary(libraryInfo->osLib);
+-    for(j=0; j < libraryInfo->numberOfMethods; j++) {
+-        sysFree(libraryInfo->nativeMethods[j].symbolName);
+-    }
+-    sysFree(libraryInfo);
++    dlclose(handle);
+ }
+ 
+ void *nativeLibSym(void *handle, char *symbol) {
+-    struct JamLibraryInfo * libInfo = (struct JamLibraryInfo*)handle;
+-    //   Class *class;
+-   //char *name;
+-   //char *type;
+-   //char *signature;
+-    #if __amigaos4__
+-    struct NativelibIFace *INativelib;
+-    #endif
+-
+-    int i,j, len, srcptr;
+-    int checkHex;
+-    char * copy = NULL;
+-    char * className = NULL;
+-    char * methodName = NULL;
+-    char * sig = NULL;
+-    char hex[5];
+-    char lastChar = '\0';
+-    BOOL isJni = FALSE;
+-    #ifdef __amigaos4__
+-    INativelib = libInfo->osIFace;
+-    #endif
+-
+-    if(strstr(symbol, "Java_") == symbol) {
+-        i = 5;
+-        isJni = FALSE;
+-
+-    } else if(strstr(symbol, "JNI_") == symbol) {
+-        // These are the two JNI_OnLoad and JNI_Onload functions
+-        isJni = TRUE;
+-        i = 0;
+-    } else {
+-        // Don't know what this could be, shouldn't happen
+-        i = 0;
+-    }
+-    for(j=0; j < libInfo->numberOfMethods; j++) {
+-        if(isJni && (strstr(libInfo->nativeMethods[j].symbolName, symbol) == libInfo->nativeMethods[j].symbolName)) {
+-            return libInfo->nativeMethods[j].fnPtr;
+-        } else if(strcmp(symbol + i, libInfo->nativeMethods[j].symbolName) == 0) {
+-            return libInfo->nativeMethods[j].fnPtr;
+-        } else {
+-            //JA_TRACE("NO match %s == %s\n", symbol+i, libInfo->nativeMethods[j].symbolName);
+-        }
+-    }
+-    return NULL;
++    return dlsym(handle, symbol);
+ }
+ 
+ char *nativeLibMapName(char *name) {
+-    char *buff = sysMalloc(strlen(name) + sizeof(".library") + 1);
+-    sprintf(buff,"%s.library", name);
++    char *buff = sysMalloc(strlen(name) + sizeof("lib.so") + 1);
++
++    sprintf(buff, "lib%s.so", name);
+     return buff;
+ }
++
++char *nativeJVMPath() {
++    Dl_info info;
++    char *path;
++
++    if(dladdr(nativeJVMPath, &info) == 0)
++        return NULL;
++
++    path = sysMalloc(strlen(info.dli_fname) + 1);
++    strcpy(path, info.dli_fname);
++
++    return path;
++}
+diff --git a/src/os/amiga/powerpc/init.c b/src/os/amiga/powerpc/init.c
+index 075b0ef..60d01ae 100644
+--- a/src/os/amiga/powerpc/init.c
++++ b/src/os/amiga/powerpc/init.c
+@@ -18,3 +18,36 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+  */
++
++#include <proto/exec.h>
++#include <proto/dos.h>
++#include <dos/dos.h>
++
++/* JamVM's per-platform init hook (called from src/init.c:initVM).
++ *
++ * clib4's pthread_create() duplicates the parent's Input(), Output() and
++ * ErrorOutput() DOS streams for every new thread and FAILS with EAGAIN if any
++ * of them is unset (DupFileHandle(0) fails).  When JamVM is launched
++ * non-interactively (e.g. via the mcpd test harness) the error and/or input
++ * streams can be NULL, so the very first createVMThread() would deadlock.
++ * Ensure all three streams are valid before any thread is created. */
++void initialisePlatform() {
++    if(ErrorOutput() == 0)
++        SelectErrorOutput(Output());
++
++    if(Input() == 0) {
++        BPTR nil = Open("NIL:", MODE_OLDFILE);
++        if(nil != 0)
++            SelectInput(nil);
++    }
++
++    if(Output() == 0) {
++        BPTR nil = Open("NIL:", MODE_NEWFILE);
++        if(nil != 0)
++            SelectOutput(nil);
++    }
++
++    /* Re-point error output once more in case Output() was just created. */
++    if(ErrorOutput() == 0)
++        SelectErrorOutput(Output());
++}
+diff --git a/src/os/amiga/pthread.h b/src/os/amiga/pthread.h
+deleted file mode 100644
+index 914c979..0000000
+--- a/src/os/amiga/pthread.h
++++ /dev/null
+@@ -1,130 +0,0 @@
+-
+-#ifndef AMIGA_PTHREAD_H
+-#define AMIGA_PTHREAD_H
+-
+-#include "signal.h"
+-
+-//
+-#include <time.h>
+-#include <sys/time.h>
+-//#include <sys/errno.h>
+-// Blargh: Hardcodin this here, sincve I get timeval issues.. *sigh*
+-#define ESRCH 3     /* No such process */
+-#include <proto/exec.h>
+-#include <proto/utility.h>
+-#include <proto/timezone.h>
+-#include <proto/dos.h>
+-#include <proto/timer.h>
+-#include <exec/semaphores.h>
+-
+-/* Define our trace here aswell */
+-#define JA_TRACE(x, y...)
+-//Forbid(); DebugPrintF("TRACE %-5ld %15s:%-5d", ((struct Process *)FindTask(NULL))->pr_ProcessID,__FILE__,__LINE__); DebugPrintF(x, ## y); Permit();
+-
+-#define ETIMEDOUT 60
+-
+-/*struct timespec
+-{
+-    unsigned int tv_sec;
+-    unsigned int tv_nsec;
+-};*/
+-
+-//typedef struct {
+-//    APTR lock;
+-//    struct CondVariable cv;
+-//    struct Semaphore *semaphore;
+-//    enum CondType cv;
+-//} VMWaitLock;
+-
+-//typedef APTR VMLock;
+-
+-
+-enum CondType {
+-    NONE,
+-    SIGNAL,
+-    BROADCAST
+-};
+-struct ProcessNode {
+-    struct MinNode node;
+-    struct Process * process;
+-};
+-struct CondVariable {
+-    struct MinList waitingProcessList;
+-    enum CondType condType;
+-    struct SignalSemaphore semaphore;
+-} CondVariable;
+-
+-struct PthreadInitData {
+-//    void * (*pd_Func)(void*);
+-    void *pd_Args;
+-    APTR pd_ExceptCode;
+-    APTR pd_ExceptData;
+-    char pd_Dummy;
+-    uint32 pd_SigMask;
+-    void * pd_Specific;
+-    //struct TimeRequest *pd_timerIO;
+-    //struct MsgPort *pd_timerMP;
+-
+-} PthreadInitData;
+-//void SignalThreads(enum CondType type, struct CondVariable cv, struct thread *self);
+-int CondWait(struct CondVariable * cv, struct SignalSemaphore * lock, struct timespec * ts);
+-
+-
+-
+-
+-/* Defines to override pthread stuff */
+-#define pthread_t APTR
+-#define pthread_mutex_t struct SignalSemaphore
+-#define pthread_cond_t struct CondVariable
+-#define pthread_key_t APTR
+-#define pthread_attr_t APTR
+-#define PTHREAD_CREATE_DETACHED 1
+-
+-void pthread_sigmask(int blocktype, uint32 * mask_ptr, void *unused1);
+-void pthread_mutex_init(pthread_mutex_t *lock, void*used);
+-int pthread_mutex_lock(struct SignalSemaphore *lock);
+-int pthread_mutex_unlock(struct SignalSemaphore * lock);
+-int pthread_mutex_trylock(struct SignalSemaphore * lock);
+-void pthread_cond_init(struct CondVariable *cv, void * unused);
+-
+-int pthread_cond_signal(struct CondVariable * cv);
+-int pthread_cond_broadcast(struct CondVariable * cv);
+-#define pthread_attr_init(attr) {}
+-#define pthread_attr_getstacksize(unused, unused2) 1*MB
+-#define pthread_attr_setstacksize(unused, unused2) {}
+-#define pthread_attr_setdetachstate {}
+-#define pthread_key_create(pt_key_t, unused) { *pt_key_t = FindTask(NULL); }
+-void* pthread_getspecific(void * self);
+-void pthread_setspecific(void * self, void *value);// { JA_TRACE("set spec\n"); FindTask(NULL)->tc_UserData = value;}
+-#define pthread_self() FindTask(NULL)
+-
+-
+-#define MAGIC_SECRET_PROCESSDATA 999
+-#define MAGIC_SECRET_JAVATHREADDATA 998
+-int pthread_create2(pthread_t * tid, void * attributes, void * (*func)(void*), void ** thread, char *name);
+-int pthread_create(pthread_t * tid, void * attributes, void * (*func)(void*), void * thread);
+-/*
+-#define pthread_create(tid, attributes, func, thread) \
+-    (*(tid) = CreateNewProcTags(\
+-            NP_Entry, &(func),        \
+-            NP_Name, "Java thread",  \
+-            NP_Child, TRUE,           \
+-            NP_ExitData, thread,       \
+-            NP_FinalData, MAGIC_SECRET_PROCESSDATA,\
+-            TAG_END))!=NULL?0:1
+-#define pthread_create(tid, attributes, func, thread, name) \
+-    (*(tid) = CreateNewProcTags(\
+-            NP_Entry, &(func),        \
+-            NP_Name, name,  \
+-            NP_Child, TRUE,           \
+-            NP_ExitData, thread,       \
+-            NP_FinalData, MAGIC_SECRET_PROCESSDATA,\
+-            TAG_END))!=NULL?0:1
+-*/
+-
+- 
+-
+-int pthread_cond_wait(struct CondVariable *cv, struct SignalSemaphore * lock);
+-int pthread_cond_timedwait(struct CondVariable * cv, struct SignalSemaphore * lock, struct timespec * absoluteTime);
+-
+-#endif
+diff --git a/src/os/amiga/sched.h b/src/os/amiga/sched.h
+deleted file mode 100644
+index cfe68d2..0000000
+--- a/src/os/amiga/sched.h
++++ /dev/null
+@@ -1,5 +0,0 @@
+-
+-#ifndef AMIGA_SCHED_H
+-#define AMIGA_SCHED_H
+-// dummy
+-#endif
+diff --git a/src/os/amiga/signal.h b/src/os/amiga/signal.h
+deleted file mode 100644
+index a5f3af5..0000000
+--- a/src/os/amiga/signal.h
++++ /dev/null
+@@ -1,89 +0,0 @@
+-
+-#ifndef AMIGA_SIGNAL_H
+-#define AMIGA_SIGNAL_H
+-
+-//#include "sys/signal.h"
+-
+-#include <proto/exec.h>
+-#include <proto/dos.h>
+-#include <exec/semaphores.h>
+-#include "pthread.h"
+-
+-#define BYTETOBINARYPATTERN "%d%d%d%d %d%d%d%d %d%d%d%d %d%d%d%d.%d%d%d%d %d%d%d%d %d%d%d%d %d%d%d%d\n"
+-#define BYTETOBINARY(byte)  \
+-  (byte & 0x80000000 ? 1 : 0), \
+-  (byte & 0x40000000 ? 1 : 0), \
+-  (byte & 0x20000000 ? 1 : 0), \
+-  (byte & 0x10000000 ? 1 : 0), \
+-  (byte & 0x8000000 ? 1 : 0), \
+-  (byte & 0x4000000 ? 1 : 0), \
+-  (byte & 0x2000000 ? 1 : 0), \
+-  (byte & 0x1000000 ? 1 : 0), \
+-  (byte & 0x800000 ? 1 : 0), \
+-  (byte & 0x400000 ? 1 : 0), \
+-  (byte & 0x200000 ? 1 : 0), \
+-  (byte & 0x100000 ? 1 : 0), \
+-  (byte & 0x80000 ? 1 : 0), \
+-  (byte & 0x40000 ? 1 : 0), \
+-  (byte & 0x20000 ? 1 : 0), \
+-  (byte & 0x10000 ? 1 : 0), \
+-  (byte & 0x8000 ? 1 : 0), \
+-  (byte & 0x4000 ? 1 : 0), \
+-  (byte & 0x2000 ? 1 : 0), \
+-  (byte & 0x1000 ? 1 : 0), \
+-  (byte & 0x0800 ? 1 : 0), \
+-  (byte & 0x0400 ? 1 : 0), \
+-  (byte & 0x0200 ? 1 : 0), \
+-  (byte & 0x0100 ? 1 : 0), \
+-  (byte & 0x0080 ? 1 : 0), \
+-  (byte & 0x0040 ? 1 : 0), \
+-  (byte & 0x0020 ? 1 : 0), \
+-  (byte & 0x0010 ? 1 : 0), \
+-  (byte & 0x0008 ? 1 : 0), \
+-  (byte & 0x0004 ? 1 : 0), \
+-  (byte & 0x0002 ? 1 : 0), \
+-  (byte & 0x0001 ? 1 : 0)
+-
+-typedef unsigned long sigset_t;
+-
+-typedef void (*_sig_func_ptr)(int);
+-
+-/* These depend upon the type of sigset_t, which right now
+-   is always a long.. They're in the POSIX namespace, but
+-   are not ANSI. */
+-#define sigaddset(what,sig) (*(what) |= (1<<(sig)), 0)
+-#define sigdelset(what,sig) (*(what) &= ~(1<<(sig)), 0)
+-#define sigemptyset(what)   (*(what) = 0, 0)
+-#define sigfillset(what)    (*(what) = ~(0), 0)
+-#define sigismember(what,sig) (((*(what)) & (1<<(sig))) != 0)
+-
+-#define SIGKILL 2
+-#define SIGINT  SIGBREAKB_CTRL_C
+-#define SIGUSR1 16
+-#define SIGQUIT 6
+-#define SIGTERM 9
+-#define SIGPIPE 10
+-#define SIGUSR2 17      // used for JAmiga specific CondWait
+-
+-/* Define our trace here aswell */
+-//#define JA_TRACE(x, y...) Forbid(); DebugPrintF("TRACE %-5ld %15s:%-5d", ((struct Process *)FindTask(NULL))->pr_ProcessID,__FILE__,__LINE__); DebugPrintF(x, ## y); Permit();
+-#define SIG_UNBLOCK 1001
+-#define SIG_BLOCK 1002
+-#define SIG_SETMASK 1003        /* unused by jamvm, here for completeness */
+-#define SA_RESTART 3000
+-/* A normal pointer */
+-#define sigjmp_buf long
+-//#define alloca(size) AllocMem(size, MEMF_PUBLIC)
+-struct sigaction {
+-    void (*sa_handler)(int);
+-    uint32 sa_flags;
+-    uint32 sa_mask;
+-};
+-
+-void sigprocmask(int blocktype, uint32 * mask_ptr, void *unused1);
+-void sigsuspend(uint32 * maskptr);
+-void sigaction(uint32 sig, struct sigaction * act, void *unused);
+-void sigwait(uint32 * maskptr, uint32 * sigptr);
+-int sigsetjmp(sigjmp_buf env, int savemask);
+-#endif
+-
+diff --git a/src/os/amiga/stdlib.h b/src/os/amiga/stdlib.h
+deleted file mode 100644
+index 5dfc5bf..0000000
+--- a/src/os/amiga/stdlib.h
++++ /dev/null
+@@ -1,30 +0,0 @@
+-
+-#ifndef JAMIGA_STDLIB_H
+-#define JAMIGA_STDLIB_H
+-
+-#include <proto/exec.h>
+-#include <proto/timer.h>
+-#include <sys/time.h>
+-#ifdef _SYS_CLIB2_STDC_H
+-#include "/SDK/clib2/include/stdlib.h"
+-#else
+-#include "/SDK/newlib/include/stdlib.h"
+-#endif
+-
+-#define PROT_READ 1
+-#define PROT_WRITE 2
+-#define PROT_EXEC 4
+-
+-#define MAP_PRIVATE 3
+-#define MAP_ANON 4
+-#define MAP_FAILED NULL
+-#define MT_MALLOC 1
+-#define mmap(addr, length, prot, flags, fd, offset) mymmap(addr, length, prot, flags, fd, offset, __FILE__, __LINE__)
+-#define munmap(addr,size) mymunmap(addr, size, __FILE__, __LINE__)
+-//#define malloc(x) mymalloc(x, MT_MALLOC, __FILE__, __LINE__)
+-//#define realloc(oldptr, size) myrealloc(oldptr, size, __FILE__, __LINE__)
+-//#define free(x) myfree(x, MT_MALLOC, __FILE__, __LINE__)
+-
+-
+-
+-#endif
+diff --git a/src/os/amiga/time.h b/src/os/amiga/time.h
+deleted file mode 100644
+index d0e45f6..0000000
+--- a/src/os/amiga/time.h
++++ /dev/null
+@@ -1,20 +0,0 @@
+-
+-#ifndef AMIGA_TIME_H
+-#define AMIGA_TIME_H
+-
+-#include <sys/time.h>
+-#include <sys/select.h>
+-#include <proto/exec.h>
+-#include <proto/timer.h>
+-
+-#ifdef _SYS_CLIB2_STDC_H
+-#define gettimeofday amiga_gettimeofday
+-void amiga_gettimeofday(struct timeval *__p, struct timezone *__z);
+-#endif
+-
+-struct timespec {
+-    unsigned int tv_sec;
+-    unsigned int tv_nsec;
+-} timespec;
+-
+-#endif
+diff --git a/src/thread.c b/src/thread.c
+index e4fb7d1..6f4ccfc 100644
+--- a/src/thread.c
++++ b/src/thread.c
+@@ -787,10 +787,18 @@ void detachJNIThread(Thread *thread) {
+     detachThread(thread);
+ }
+ 
++#ifdef __amigaos4__
++#include <proto/exec.h>
++#define VMT(s) DebugPrintF("[VMT] %s\n", (s))
++#else
++#define VMT(s)
++#endif
++
+ static void *shell(void *args) {
+     void *start = ((void**)args)[1];
+     Thread *self = ((Thread**)args)[2];
+ 
++    VMT("shell entered");
+     if(main_exited)
+         return NULL;
+ 
+@@ -798,6 +806,7 @@ static void *shell(void *args) {
+        exist.  As the root group is main, we add it to that for now... */
+     attachThread(((char**)args)[0], TRUE, &self, self,
+                  INST_DATA(main_ee.thread, Object*, group_offset));
++    VMT("shell attached");
+ 
+     sysFree(args);
+     (*(void(*)(Thread*))start)(self);
+@@ -814,7 +823,14 @@ void createVMThread(char *name, void (*start)(Thread*)) {
+     args[2] = thread;
+ 
+     memset(thread, 0, sizeof(Thread));
+-    pthread_create(&tid, &attributes, shell, args);
++    {
++        int _pc = pthread_create(&tid, &attributes, shell, args);
++        DebugPrintF("[VMT] pthread_create(&attributes) rc=%ld\n", (long)_pc);
++        if(_pc != 0) {
++            int _pc2 = pthread_create(&tid, NULL, shell, args);
++            DebugPrintF("[VMT] pthread_create(NULL) rc=%ld\n", (long)_pc2);
++        }
++    }
+ 
+     /* Wait for thread to start */
+ 
+@@ -822,6 +838,7 @@ void createVMThread(char *name, void (*start)(Thread*)) {
+     while(classlibGetThreadState(thread) == CREATING)
+         pthread_cond_wait(&cv, &lock);
+     pthread_mutex_unlock(&lock);
++    VMT("createVMThread done");
+ }
+ 
+ Object *runningThreadStackTrace(Thread *thread, int max_depth,
+@@ -1234,6 +1251,9 @@ Object *runningThreadObjects() {
+ 
+ void exitVM(int status) {
+     main_exited = TRUE;
++#ifdef __amigaos4__
++    DebugPrintF("[EXIT] exitVM enter status=%d\n", status);
++#endif
+ 
+     /* Execute System.exit() to run any registered shutdown hooks.
+        In the unlikely event that System.exit() can't be found, or
+@@ -1248,12 +1268,19 @@ void exitVM(int status) {
+         }
+     }
+ 
++#ifdef __amigaos4__
++    DebugPrintF("[EXIT] exitVM calling jamvm_exit(%d)\n", status);
++#endif
+     jamvm_exit(status);
+ }
+ 
+ void mainThreadWaitToExitVM() {
+     Thread *self = threadSelf();
+     TRACE("Waiting for %d non-daemon threads to exit\n", non_daemon_thrds);
++#ifdef __amigaos4__
++    DebugPrintF("[EXIT] mainThreadWaitToExitVM enter non_daemon=%d\n",
++                non_daemon_thrds);
++#endif
+ 
+     disableSuspend(self);
+     pthread_mutex_lock(&exit_lock);
+@@ -1264,6 +1291,9 @@ void mainThreadWaitToExitVM() {
+ 
+     pthread_mutex_unlock(&exit_lock);
+     enableSuspend(self);
++#ifdef __amigaos4__
++    DebugPrintF("[EXIT] mainThreadWaitToExitVM done\n");
++#endif
+ }
+ 
+ void mainThreadSetContextClassLoader(Object *loader) {
+@@ -1324,6 +1354,13 @@ int initialiseThreadStage1(InitArgs *args) {
+     return TRUE;
+ }
+ 
++#ifdef __amigaos4__
++#include <proto/exec.h>
++#define TS2(s) DebugPrintF("[TS2] %s\n", (s))
++#else
++#define TS2(s)
++#endif
++
+ int initialiseThreadStage2(InitArgs *args) {
+     Class *thrdGrp_class;
+     Object *main_group, *java_thread;
+@@ -1332,9 +1369,11 @@ int initialiseThreadStage2(InitArgs *args) {
+     MethodBlock *run, *remove_thread;
+ 
+     /* Load thread class and register reference for compaction threading */
++    TS2("load Thread");
+     if((thread_class = findSystemClass0(SYMBOL(java_lang_Thread))) == NULL)
+         goto error;
+ 
++    TS2("Thread loaded");
+     registerStaticClassRef(&thread_class);
+ 
+     name = findField(thread_class, SYMBOL(name), classlibThreadNameType());
+@@ -1378,11 +1417,13 @@ int initialiseThreadStage2(InitArgs *args) {
+ 
+     /* Classlib specific initialisation prior to main thread being
+        setup */
++    TS2("classlibThreadPreInit");
+     main_group = classlibThreadPreInit(thread_class, thrdGrp_class);
+     if(main_group == NULL)
+         goto error;
+ 
+     /* Initialise the Java-level thread objects for the main thread */
++    TS2("initJavaThread");
+     java_thread = initJavaThread(&main_thread, FALSE, "main", main_group);
+     if(java_thread == NULL)
+         goto error;
+@@ -1391,20 +1432,30 @@ int initialiseThreadStage2(InitArgs *args) {
+ 
+     /* Setup signal handling.  This will be inherited by all
+        threads created within Java */
++    TS2("initialiseSignals");
+     if(!initialiseSignals())
+         goto error;
+ 
+     /* Classlib specific initialisation once main thread has been
+        setup */
++    TS2("classlibThreadPostInit");
+     if(!classlibThreadPostInit())
+         goto error;
++    TS2("createVMThread(Signal Handler)");
+ 
+     /* Create the signal handler thread.  It is responsible for
+        catching and handling SIGQUIT (thread dump) and SIGINT
+        (user-termination of the VM, e.g. via Ctrl-C).  Note it
+        must be a valid Java-level thread as it needs to run the
+        shutdown hooks in the event of user-termination */
++#ifndef __amigaos4__
+     createVMThread("Signal Handler", classlibSignalThread);
++#else
++    /* AmigaOS/clib4: skip the signal-handler thread.  It blocks forever in
++       sigwait() (cross-thread signal delivery is broken on clib4), so it can't
++       be cleanly shut down and would hang clib4 exit().  SIGQUIT/SIGINT (Ctrl-C)
++       handling isn't needed for the headless qemu/Run workflow. */
++#endif
+ 
+     return TRUE;
+ 
+diff --git a/src/zip.c b/src/zip.c
+index b901856..eb21865 100644
+--- a/src/zip.c
++++ b/src/zip.c
+@@ -120,6 +120,10 @@ int zipComp(char *path1, char *path2) {
+     return path1_len == path2_len && !memcmp(path1, path2, path1_len);
+ }
+ 
++#ifdef __amigaos4__
++#include <proto/exec.h>
++#endif
++
+ ZipFile *processArchive(char *path) {
+     unsigned char magic[SIG_LEN];
+     unsigned char *data, *pntr;
+@@ -128,21 +132,42 @@ ZipFile *processArchive(char *path) {
+     HashTable *hash_table;
+     ZipFile *zip;
+ 
+-    if((fd = open(path, O_RDONLY)) == -1)
++    if((fd = open(path, O_RDONLY)) == -1) {
++#ifdef __amigaos4__
++        DebugPrintF("[ZIP] open FAILED '%s'\n", path);
++#endif
+         return NULL;
++    }
+ 
+     /* First 4 bytes must be the signature for the first local file header */
+-    if(read(fd, &magic[0], SIG_LEN) != SIG_LEN ||
+-                    READ_LE_INT(magic) != LOC_FILE_HEADER_SIG)
+-        goto error;
++    {
++        int _n = read(fd, &magic[0], SIG_LEN);
++#ifdef __amigaos4__
++        DebugPrintF("[ZIP] '%s' fd=%d read=%d sig=%08x want=%08x\n", path, fd,
++                    _n, (unsigned)READ_LE_INT(magic),
++                    (unsigned)LOC_FILE_HEADER_SIG);
++#endif
++        if(_n != SIG_LEN || READ_LE_INT(magic) != LOC_FILE_HEADER_SIG)
++            goto error;
++    }
+ 
+     /* Get the length */
+     len = lseek(fd, 0, SEEK_END);
++#ifdef __amigaos4__
++    DebugPrintF("[ZIP] '%s' len=%d\n", path, len);
++#endif
+ 
+-    /* Mmap the file into memory */
+-    if((data = (unsigned char*)mmap(0, len, PROT_READ, MAP_FILE |
+-                                            MAP_PRIVATE, fd, 0)) == MAP_FAILED)
+-        goto error;
++    /* Read the whole file into memory.  JamVM originally mmap'd the file, but
++       clib4 has no file-backed mmap (only anonymous); a malloc'd buffer works
++       fine since the rest of the code just indexes into zip->data. */
++    data = (unsigned char*)sysMalloc(len);
++    {
++        int got = 0, r;
++        if(lseek(fd, 0, SEEK_SET) != 0) { sysFree(data); goto error; }
++        while(got < len && (r = read(fd, data + got, len - got)) > 0)
++            got += r;
++        if(got != len) { sysFree(data); goto error; }
++    }
+ 
+     /* Locate the end of central directory record by searching backwards for
+        the record signature. */
+@@ -216,7 +241,7 @@ ZipFile *processArchive(char *path) {
+     return zip;
+ 
+ error2:
+-    munmap(data, len);
++    sysFree(data);
+ 
+ error:
+     close(fd);
+-- 
+2.49.0.windows.1
+

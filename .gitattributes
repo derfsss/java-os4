@@ -1,0 +1,11 @@
+# Default: normalise to LF in the repo (builds run in a Linux container).
+* text=auto eol=lf
+# Windows-side scripts keep CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+# Binary patches/blobs untouched.
+*.patch -text
+*.lha binary
+*.zip binary
+*.jar binary
+*.qcow2 binary

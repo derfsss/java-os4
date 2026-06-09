@@ -1,0 +1,19 @@
+# Build output / release artefacts
+/build/
+/dist/
+
+# Vendored upstream source trees (cloned/fetched, not committed here).
+# Track only our patches under docs/ / vendor patches if/when they exist.
+/vendor/jamvm/
+/vendor/icedtea8/
+/vendor/fallback/
+/vendor/*.tar.*
+/vendor/*.zip
+
+# Editor / OS cruft
+*.o
+*.d
+*.a
+*.swp
+*~
+.DS_Store
