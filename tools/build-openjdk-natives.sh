@@ -105,6 +105,15 @@ if [ -f "$FIS" ] && ! grep -q "FileInputStream_available0" "$FIS"; then
     echo "=== adapted FileInputStream.c available->available0 (Temurin skew) ==="
 fi
 
+# sun.misc.VM.latestUserDefinedLoader -> latestUserDefinedLoader0 (Temurin late-8u
+# renamed it; 8u77 VM.c has the un-suffixed name -> UnsatisfiedLinkError from
+# ObjectInputStream during deserialization).  JVM_LatestUserDefinedLoader exists.
+VMC="$J/src/share/native/sun/misc/VM.c"
+if [ -f "$VMC" ] && ! grep -q "VM_latestUserDefinedLoader0" "$VMC"; then
+    sed -i 's/Java_sun_misc_VM_latestUserDefinedLoader(/Java_sun_misc_VM_latestUserDefinedLoader0(/' "$VMC"
+    echo "=== adapted VM.c latestUserDefinedLoader->...0 (Temurin skew) ==="
+fi
+
 # TimeZone_md.c: treat amigaos like __linux__ for the tz-file detection blocks (they
 # fopen /etc/localtime etc. -> NULL on Amiga -> graceful fallback) and like MACOSX for
 # getGMTOffsetID (uses struct tm.tm_gmtoff, which clib4 HAS; the plain branch uses the
