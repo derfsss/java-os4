@@ -1,7 +1,7 @@
 From 87c87fbe99dc7a6c185c6eb16b177ff0ddd105a4 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 22:30:57 +0100
-Subject: [PATCH] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
+Subject: [PATCH 1/2] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
 
 JAmiga JamVM revival on ppc-amigaos-gcc 11.5 + clib4, plus OpenJDK 8
 (Temurin 8 rt.jar) class-library integration:
@@ -1778,6 +1778,62 @@ index b901856..eb21865 100644
  
  error:
      close(fd);
+-- 
+2.49.0.windows.1
+
+
+From 79fb4ab57ff81a7279be88cf0334bd584109de78 Mon Sep 17 00:00:00 2001
+From: Richard Gibbs <wofderfs@googlemail.com>
+Date: Tue, 9 Jun 2026 23:20:17 +0100
+Subject: [PATCH 2/2] jam.c: enable the real sun.misc.Launcher system
+ classloader on AmigaOS
+
+The earlier "no-output heisenbug" was missing openjdk natives (CDS stubs,
+VM.latestUserDefinedLoader0, TimeZone, getManifestNum), not memory corruption;
+with those supplied the system loader initialises reliably.  Use it (with a
+bootstrap-loader fallback if init fails); -Xbootclasspath classes load via
+delegation.  Known gap: app classes from a -classpath entry (URLClassPath) still
+fail on Amiga volume:->URL conversion.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ src/jam.c | 23 ++++++++++++-----------
+ 1 file changed, 12 insertions(+), 11 deletions(-)
+
+diff --git a/src/jam.c b/src/jam.c
+index 2951d20..eccffab 100644
+--- a/src/jam.c
++++ b/src/jam.c
+@@ -274,17 +274,18 @@ int main(int argc, char *argv[]) {
+     }
+ 
+ #ifdef __amigaos4__
+-    /* The OpenJDK system classloader (sun.misc.Launcher) now INITIALISES cleanly
+-       on AmigaOS -- the hard crash in getSystemClassLoader was the missing CDS
+-       JVM_GetResourceLookupCacheURLs/JVM_KnownToNotExist (libjava.so called the
+-       unresolved symbols); those are now stubbed (return NULL/FALSE) in jvm.c.
+-       HOWEVER running the app class THROUGH the system loader still has a latent
+-       bug (HelloWorld loads + main returns but produces no output; a heisenbug
+-       that the [NM] debug trace masked -> suspect memory corruption / GC on the
+-       much larger Launcher/URLClassPath code path).  So for now keep the reliable
+-       BOOTSTRAP path (app class on -Xbootclasspath).  TODO(Phase 3): debug the
+-       system-loader run path + Amiga path->URL for real -classpath. */
+-    system_loader = NULL;
++    /* The OpenJDK system classloader (sun.misc.Launcher) now initialises reliably on
++       AmigaOS -- the earlier "heisenbug" was missing openjdk natives (CDS stubs,
++       VM.latestUserDefinedLoader0, TimeZone, ...), now supplied.  Use the real system
++       loader; classes on -Xbootclasspath load via delegation.  Fall back to the
++       bootstrap loader if it ever fails to init.  KNOWN GAP: loading an app class from
++       a -classpath entry (URLClassPath) still fails -- Amiga "volume:" path -> URL
++       (Phase 3 TODO); -Xbootclasspath is the working path meanwhile. */
++    system_loader = getSystemClassLoader();
++    if(system_loader == NULL)
++        clearException();
++    else
++        mainThreadSetContextClassLoader(system_loader);
+ #else
+     if((system_loader = getSystemClassLoader()) == NULL)
+         goto error;
 -- 
 2.49.0.windows.1
 
