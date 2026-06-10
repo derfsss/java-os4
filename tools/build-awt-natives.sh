@@ -132,17 +132,50 @@ OEOF
 $CC $AWTINC -c "$OUT/libawt/awt_onload_compat.c" -o "$OUT/libawt/awt_onload_compat.o" 2>"$OUT/e" \
     && echo "  awt OnLoad/jvm compat OK" || { echo "  awt OnLoad compat FAIL"; head -3 "$OUT/e"; }
 
-# java.awt.Font.initIDs lives in awt_Font.c (the X11 libawt_headless/xawt set,
-# not built).  Font's clinit needs it before ANY Graphics2D use; the real one
-# only caches field IDs for the X11 font metrics natives.  No-op for now --
-# the real font pipeline (freetype/fontmanager) is the M2 work item.
+# java.awt.*.initIDs natives live in the X11 libawt_headless/xawt set (not
+# built).  Headless runs only need Font (clinit unguarded); a NON-headless run
+# with the Amiga toolkit fires the !isHeadless()-guarded ones too (AWTEvent,
+# Component, Window, ...).  All of them only cache field IDs for X11 native
+# event/widget code we never run -- no-op stubs are safe with our peer set.
+# (rt.jar's full initIDs list audited 2026-06-10; the share/native initIDs.c
+# already in LIBAWT_FILES covers the rest: Toolkit, Label, MenuBar, ...)
 cat > "$OUT/libawt/font_initids_compat.c" <<'FEOF'
 #include "jni.h"
+#define NOOP_INITIDS(CLS) \
+    JNIEXPORT void JNICALL Java_java_awt_##CLS##_initIDs(JNIEnv *env, jclass cls) { }
+NOOP_INITIDS(Font)
+NOOP_INITIDS(AWTEvent)
+NOOP_INITIDS(Button)
+NOOP_INITIDS(Checkbox)
+NOOP_INITIDS(Component)
+NOOP_INITIDS(Container)
+NOOP_INITIDS(Cursor)
+NOOP_INITIDS(Dialog)
+NOOP_INITIDS(Event)
+NOOP_INITIDS(FileDialog)
+NOOP_INITIDS(Frame)
+NOOP_INITIDS(Insets)
+NOOP_INITIDS(KeyboardFocusManager)
+NOOP_INITIDS(Menu)
+NOOP_INITIDS(MenuComponent)
+NOOP_INITIDS(MenuItem)
+NOOP_INITIDS(Scrollbar)
+NOOP_INITIDS(ScrollPane)
+NOOP_INITIDS(TextArea)
+NOOP_INITIDS(TextField)
+NOOP_INITIDS(TrayIcon)
+NOOP_INITIDS(Window)
 JNIEXPORT void JNICALL
-Java_java_awt_Font_initIDs(JNIEnv *env, jclass cls) { }
+Java_java_awt_event_InputEvent_initIDs(JNIEnv *env, jclass cls) { }
+JNIEXPORT void JNICALL
+Java_java_awt_event_KeyEvent_initIDs(JNIEnv *env, jclass cls) { }
+/* Window.show closes the (nonexistent) splash screen; native lives in
+   awt_UNIXToolkit.c (X11 set, not built) */
+JNIEXPORT void JNICALL
+Java_sun_awt_SunToolkit_closeSplashScreen(JNIEnv *env, jclass cls) { }
 FEOF
 $CC $AWTINC -c "$OUT/libawt/font_initids_compat.c" -o "$OUT/libawt/font_initids_compat.o" 2>"$OUT/e" \
-    && echo "  Font.initIDs compat OK" || { echo "  Font.initIDs compat FAIL"; head -3 "$OUT/e"; }
+    && echo "  awt initIDs compat OK" || { echo "  awt initIDs compat FAIL"; head -3 "$OUT/e"; }
 
 echo "=== link libawt.so ==="
 if ppc-amigaos-gcc -mcrt=clib4 -fPIC -shared -Wl,-rpath=SYS:Test \
@@ -208,6 +241,20 @@ JNIEXPORT jstring JNICALL
 Java_sun_awt_FcFontManager_getFontPathNative(JNIEnv *env, jobject thiz,
     jboolean noType1, jboolean isX11)
 { return (*env)->NewStringUTF(env, ""); }
+/* sun.font.NativeFont = X11 bitmap fonts (libawt_xawt).  A NON-headless run
+   probes them; report "none exist" so the font manager stays scalable-only
+   (the working M2 configuration).  With fontExists==false no NativeFont is
+   ever instantiated, so the instance natives are unreachable. */
+JNIEXPORT jboolean JNICALL
+Java_sun_font_NativeFont_fontExists(JNIEnv *env, jclass cls, jbyteArray name)
+{ return JNI_FALSE; }
+JNIEXPORT jboolean JNICALL
+Java_sun_font_NativeFont_haveBitmapFonts(JNIEnv *env, jclass cls, jbyteArray n)
+{ return JNI_FALSE; }
+JNIEXPORT jint JNICALL
+Java_sun_font_NativeFont_countGlyphs(JNIEnv *env, jclass cls, jbyteArray name,
+    jint ptSize)
+{ return 0; }
 FCEOF
 if $CC $FMINC -c "$OUT/libfontmanager/fontconfig_stub.c" -o "$OUT/libfontmanager/fontconfig_stub.o" 2>"$OUT/e"; then
     fok=$((fok+1)); echo "  fontconfig stubs OK"
