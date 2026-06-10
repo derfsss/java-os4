@@ -31,7 +31,7 @@ public class WinTest {
         System.out.println("[PASS] frame blitted");
 
         int[] ev = new int[4];
-        long until = System.currentTimeMillis() + 120000;
+        long until = System.currentTimeMillis() + 15000;
         int events = 0;
         outer:
         while (System.currentTimeMillis() < until) {
