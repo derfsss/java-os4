@@ -1,7 +1,7 @@
 From 87c87fbe99dc7a6c185c6eb16b177ff0ddd105a4 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 22:30:57 +0100
-Subject: [PATCH 1/5] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
+Subject: [PATCH 1/6] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
 
 JAmiga JamVM revival on ppc-amigaos-gcc 11.5 + clib4, plus OpenJDK 8
 (Temurin 8 rt.jar) class-library integration:
@@ -1785,7 +1785,7 @@ index b901856..eb21865 100644
 From 79fb4ab57ff81a7279be88cf0334bd584109de78 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 23:20:17 +0100
-Subject: [PATCH 2/5] jam.c: enable the real sun.misc.Launcher system
+Subject: [PATCH 2/6] jam.c: enable the real sun.misc.Launcher system
  classloader on AmigaOS
 
 The earlier "no-output heisenbug" was missing openjdk natives (CDS stubs,
@@ -1841,7 +1841,7 @@ index 2951d20..eccffab 100644
 From e2b4d148d6b362166ce208582d557202a455130c Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 07:36:47 +0100
-Subject: [PATCH 3/5] Amiga path model: strip leading "/Volume:" in JVM_Open +
+Subject: [PATCH 3/6] Amiga path model: strip leading "/Volume:" in JVM_Open +
  nativeLibOpen
 
 java.io presents canonical paths as Unix-absolute ("/Volume:dir/file") so
@@ -1915,7 +1915,7 @@ index aa1237b..1a6f5be 100644
 From 416f0e4d756e8a94ac74c1718b8edb6ea4dcaf9b Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 08:00:59 +0100
-Subject: [PATCH 4/5] properties.c: present user.dir as Unix-absolute
+Subject: [PATCH 4/6] properties.c: present user.dir as Unix-absolute
  ("/Volume:dir") on AmigaOS
 
 Part of the Amiga path model: java.io/java.nio see '/'-prefixed absolute paths
@@ -1964,7 +1964,7 @@ index b453d7b..19169ff 100644
 From 2552a6f5e94a3b271cf352ed72b887b4efd161f3 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 08:17:32 +0100
-Subject: [PATCH 5/5] Amiga launcher defaults: zero-flag -cp, java version
+Subject: [PATCH 5/6] Amiga launcher defaults: zero-flag -cp, java version
  "1.8.0"
 
 `jamvm-openjdk -cp app.jar Main` and `-version` now work with no extra flags
@@ -2109,6 +2109,175 @@ index ce73df6..742fc9c 100644
  
  #ifndef MIN
  #define MIN(a, b) ((a) < (b) ? (a) : (b))
+-- 
+2.49.0.windows.1
+
+
+From 4c1743055b88fd221bba7c481b03dee40e337b1a Mon Sep 17 00:00:00 2001
+From: Richard Gibbs <wofderfs@googlemail.com>
+Date: Wed, 10 Jun 2026 10:04:13 +0100
+Subject: [PATCH 6/6] Cooperative GC safepoints for AmigaOS/clib4
+ (multi-threaded stop-the-world)
+
+clib4's pthread_kill only sets a raw Exec signal bit -- the SIGUSR1 handler
+never runs, so signal-based suspension could not stop a thread executing
+bytecode (a pure-compute thread hung GC forever; verified by a MT allocation
+stress with a spinner thread).  Replace delivery with cooperative polling:
+
+- thread.c: amiga suspendLoop parks by polling thread->suspend (usleep loop;
+  sigsetjmp still spills registers for GC root scanning); threadPollSuspend()
+  exported; suspend_pending_count gates the poll, bumped in
+  suspendThread/suspendAllThreads, dropped in resume*.
+- interp-indirect.h (switch interpreter): poll the gate each dispatch; only
+  when a suspension is pending is threadSelf() consulted.
+
+Verified: 4 allocator threads + a 1.3e9-iteration compute spinner + System.gc()
+complete correctly (sums equal, spinner stops, exit 0); 37/37 conformance and
+the zero-flag -cp launch unaffected.  Note: only the (default) switch
+interpreter variant polls; THREADED/DIRECT builds would need the same hook.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ src/interp/engine/interp-indirect.h | 16 +++++++++
+ src/thread.c                        | 52 +++++++++++++++++++++++++++++
+ 2 files changed, 68 insertions(+)
+
+diff --git a/src/interp/engine/interp-indirect.h b/src/interp/engine/interp-indirect.h
+index 6a9f7c0..6380ae7 100644
+--- a/src/interp/engine/interp-indirect.h
++++ b/src/interp/engine/interp-indirect.h
+@@ -41,10 +41,26 @@ unused:
+ #define INTERPRETER_DEFINITIONS                            \
+     /* none */
+ 
++#ifdef __amigaos4__
++/* Cooperative GC stop-the-world (clib4 pthread_kill cannot async-interrupt a
++   thread executing bytecode): poll the global suspend-pending gate each
++   dispatch; only when a suspension is in progress do we look up threadSelf()
++   and park (thread.c suspendLoop). */
++extern volatile int suspend_pending_count;
++extern void threadPollSuspend();
++
+ #define DISPATCH_PROLOGUE                                  \
+     while(TRUE) {                                          \
++        if(suspend_pending_count)                          \
++            threadPollSuspend();                           \
+         switch(*pc) {                                      \
+             default:
++#else
++#define DISPATCH_PROLOGUE                                  \
++    while(TRUE) {                                          \
++        switch(*pc) {                                      \
++            default:
++#endif
+ 
+ #endif /* THREADED */
+ 
+diff --git a/src/thread.c b/src/thread.c
+index 6f4ccfc..84cc4ce 100644
+--- a/src/thread.c
++++ b/src/thread.c
+@@ -110,6 +110,12 @@ static int threads_waiting_to_start = 0;
+ 
+ static int main_exited = FALSE;
+ 
++#ifdef __amigaos4__
++/* Cooperative-suspension gate, polled by the interpreter dispatch loop
++   (see suspendLoop below + interp-indirect.h THREAD_POLL_SUSPEND). */
++volatile int suspend_pending_count = 0;
++#endif
++
+ /* Bitmap - used for generating unique thread ID's */
+ #define MAP_INC 32
+ static unsigned int *tidBitmap = NULL;
+@@ -885,6 +891,9 @@ Object *runningThreadStackTrace(Thread *thread, int max_depth,
+ }
+ 
+ void suspendThread(Thread *thread) {
++#ifdef __amigaos4__
++    suspend_pending_count++;
++#endif
+     thread->suspend = TRUE;
+     MBARRIER();
+ 
+@@ -917,6 +926,9 @@ void resumeThread(Thread *thread) {
+               thread->id);
+         sched_yield();
+     }
++#ifdef __amigaos4__
++    suspend_pending_count--;
++#endif
+ }
+ 
+ void suspendAllThreads(Thread *self) {
+@@ -924,6 +936,9 @@ void suspendAllThreads(Thread *self) {
+ 
+     TRACE("Thread %p id: %d is suspending all threads\n", self, self->id);
+     pthread_mutex_lock(&lock);
++#ifdef __amigaos4__
++    suspend_pending_count++;
++#endif
+ 
+     for(thread = &main_thread; thread != NULL; thread = thread->next) {
+         if(thread == self)
+@@ -999,6 +1014,9 @@ void resumeAllThreads(Thread *self) {
+     }
+ 
+     all_threads_suspended = FALSE;
++#ifdef __amigaos4__
++    suspend_pending_count--;
++#endif
+     if(threads_waiting_to_start) {
+         TRACE("%d threads waiting to start...\n", threads_waiting_to_start);
+         pthread_cond_broadcast(&cv);
+@@ -1008,6 +1026,39 @@ void resumeAllThreads(Thread *self) {
+     pthread_mutex_unlock(&lock);
+ }
+ 
++#ifdef __amigaos4__
++/* COOPERATIVE suspension (Amiga/clib4): pthread_kill() only sets a raw Exec
++   signal bit -- the SIGUSR1 handler never runs, so signal-based stop-the-world
++   cannot stop a thread executing bytecode.  Instead, running threads POLL their
++   suspend flag from the interpreter dispatch loop (THREAD_POLL_SUSPEND in
++   interp-indirect.h, gated on suspend_pending_count) and park here.  sigsetjmp
++   still spills the registers into env on the stack for GC root scanning.
++   (suspend_pending_count is defined near the top of this file.) */
++static void suspendLoop(Thread *thread) {
++    char old_state = thread->suspend_state;
++    sigjmp_buf env;
++
++    sigsetjmp(env, FALSE);
++
++    thread->stack_top = &env;
++    thread->suspend_state = SUSP_SUSPENDED;
++    MBARRIER();
++
++    while(thread->suspend && old_state == SUSP_NONE)
++        usleep(1000);
++
++    thread->suspend_state = old_state;
++    MBARRIER();
++}
++
++void threadPollSuspend() {
++    Thread *thread = threadSelf();
++
++    if(thread != NULL && thread->suspend
++                      && thread->suspend_state == SUSP_NONE)
++        suspendLoop(thread);
++}
++#else
+ static void suspendLoop(Thread *thread) {
+     char old_state = thread->suspend_state;
+     sigjmp_buf env;
+@@ -1029,6 +1080,7 @@ static void suspendLoop(Thread *thread) {
+     thread->suspend_state = old_state;
+     MBARRIER();
+ }
++#endif
+ 
+ static void suspendHandler(int sig) {
+     Thread *thread = threadSelf();
 -- 
 2.49.0.windows.1
 

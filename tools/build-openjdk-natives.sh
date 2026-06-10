@@ -51,6 +51,36 @@ cat > "$COMPAT/jdkdefs.h" <<'EOF'
 #ifndef RELEASE
 #define RELEASE "amigaos4"   /* os.version string (normally uname -r) */
 #endif
+/* sysconf names clib4 doesn't define: map to unknown ids so sysconf() returns
+   -1 and the JDK code takes its documented fallback (default buffer sizes,
+   IOV_MAX=16). */
+#include <unistd.h>
+#ifndef _SC_GETPW_R_SIZE_MAX
+#define _SC_GETPW_R_SIZE_MAX 9981
+#endif
+#ifndef _SC_GETGR_R_SIZE_MAX
+#define _SC_GETGR_R_SIZE_MAX 9982
+#endif
+#ifndef _SC_IOV_MAX
+#define _SC_IOV_MAX 9983
+#endif
+/* sun.nio.fs passes open() flags from Java (UnixConstants in Temurin's LINUX
+   rt.jar = Linux octal values); clib4's O_* encoding is entirely different
+   (O_CREAT 1<<3 vs 0100 etc) -- translate bit-by-bit.  ACCMODE bits match. */
+#include <fcntl.h>
+static int amiga_oflags(int lf) {
+    int f = lf & 3;
+    if (lf & 0100)     f |= O_CREAT;
+    if (lf & 0200)     f |= O_EXCL;
+    if (lf & 01000)    f |= O_TRUNC;
+    if (lf & 02000)    f |= O_APPEND;
+    if (lf & 04000)    f |= O_NONBLOCK;
+    if (lf & 010000)   f |= O_DSYNC;
+    if (lf & 04000000) f |= O_SYNC;
+    if (lf & 0400000)  f |= O_NOFOLLOW;
+    if (lf & 0200000)  f |= O_DIRECTORY;
+    return f;
+}
 /* Amiga path normaliser for the clib4/AmigaDOS layer.  OpenJDK's java.io models
    paths as Unix-absolute (leading '/'), but AmigaDOS uses "Volume:dir/file" with
    NO leading '/'.  We present canonical paths to Java WITH a leading '/' (so
@@ -367,5 +397,162 @@ if [ -f "$NIOP/sun/nio/fs/DefaultFileSystemProvider.java" ]; then
     && echo "  niopatch.zip OK ($(wc -c < "$OUT/niopatch.zip") bytes)" \
     || echo "  niopatch.zip FAIL"
 fi
+
+echo "=== libnio.so (sun.nio.fs + file-channel sun.nio.ch) ==="
+# Real NIO.2 file ops (java.nio.file.Files.*) + FileChannel.  The fs natives are
+# the generic-unix UnixNativeDispatcher (capability probes via dlsym(RTLD_DEFAULT)
+# degrade gracefully on clib4) + the Linux dispatcher our (niopatch) provider
+# class expects -- its mntent/xattr deps are shimmed (stubs: no mount table, no
+# xattrs on AmigaDOS).  Socket/epoll/watch parts of sun.nio.ch are EXCLUDED;
+# their natives surface as UnsatisfiedLinkError only if used.
+NFS=$J/src/solaris/native/sun/nio/fs
+NCH=$J/src/solaris/native/sun/nio/ch
+
+# compat shims for LinuxNativeDispatcher
+cat > "$COMPAT/mntent.h" <<'EOF'
+/* clib4 has no mount-table API; stub it (FileStore iteration reports nothing). */
+#ifndef AMIGA_MNTENT_SHIM_H
+#define AMIGA_MNTENT_SHIM_H
+#include <stdio.h>
+struct mntent { char *mnt_fsname, *mnt_dir, *mnt_type, *mnt_opts; int mnt_freq, mnt_passno; };
+static FILE *setmntent(const char *fn, const char *type) { (void)fn; (void)type; return NULL; }
+static struct mntent *getmntent_r(FILE *fp, struct mntent *m, char *buf, int len) { (void)fp; (void)m; (void)buf; (void)len; return NULL; }
+static int endmntent(FILE *fp) { (void)fp; return 1; }
+#endif
+EOF
+mkdir -p "$COMPAT/sys"
+cat > "$COMPAT/sys/xattr.h" <<'EOF'
+/* clib4/AmigaDOS: no extended attributes; stub to ENOTSUP. */
+#ifndef AMIGA_XATTR_SHIM_H
+#define AMIGA_XATTR_SHIM_H
+#include <errno.h>
+#include <sys/types.h>
+static ssize_t fgetxattr(int fd, const char *n, void *v, size_t s) { (void)fd;(void)n;(void)v;(void)s; errno = ENOSYS; return -1; }
+static int fsetxattr(int fd, const char *n, void *v, size_t s, int f) { (void)fd;(void)n;(void)v;(void)s;(void)f; errno = ENOSYS; return -1; }
+static int fremovexattr(int fd, const char *n) { (void)fd;(void)n; errno = ENOSYS; return -1; }
+static ssize_t flistxattr(int fd, char *l, size_t s) { (void)fd;(void)l;(void)s; errno = ENOSYS; return -1; }
+#endif
+EOF
+
+# UnixNativeDispatcher.c: (a) join the _ALLBSD *64->base mapping; (b) normalise the
+# Unix-absolute "/Volume:" paths (our Amiga path model) at the single arrival
+# pattern `(const char*)jlong_to_ptr(xxxAddress)`.  Idempotent.
+UND="$NFS/UnixNativeDispatcher.c"
+if [ -f "$UND" ] && ! grep -q amiga_path "$UND"; then
+    sed -i 's@#ifdef _ALLBSD_SOURCE@#if defined(_ALLBSD_SOURCE) || defined(__amigaos4__)@g' "$UND"
+    perl -pi -e 's/\(const char\*\)jlong_to_ptr\((\w+)\)/amiga_path((const char*)jlong_to_ptr($1))/g' "$UND"
+    echo "  adapted UnixNativeDispatcher.c (ALLBSD map + amiga_path)"
+fi
+UCF="$NFS/UnixCopyFile.c"
+if [ -f "$UCF" ] && ! grep -q __amigaos4__ "$UCF"; then
+    sed -i 's@#ifdef _ALLBSD_SOURCE@#if defined(_ALLBSD_SOURCE) || defined(__amigaos4__)@g' "$UCF"
+    echo "  adapted UnixCopyFile.c"
+fi
+# FileDispatcherImpl.c: *64->base mapping + /dev/null -> NIL: (preClose dup target)
+FDI="$NCH/FileDispatcherImpl.c"
+if [ -f "$FDI" ] && ! grep -q __amigaos4__ "$FDI"; then
+    sed -i 's@#ifdef _ALLBSD_SOURCE@#if defined(_ALLBSD_SOURCE) || defined(__amigaos4__)@g; s@defined(_ALLBSD_SOURCE)@(defined(_ALLBSD_SOURCE) || defined(__amigaos4__))@g; s@"/dev/null"@"NIL:"@' "$FDI"
+    echo "  adapted FileDispatcherImpl.c"
+fi
+FCI="$NCH/FileChannelImpl.c"
+if [ -f "$FCI" ] && ! grep -q __amigaos4__ "$FCI"; then
+    sed -i 's@defined(_ALLBSD_SOURCE)@(defined(_ALLBSD_SOURCE) || defined(__amigaos4__))@g; s@#ifdef _ALLBSD_SOURCE@#if defined(_ALLBSD_SOURCE) || defined(__amigaos4__)@g' "$FCI"
+    echo "  adapted FileChannelImpl.c"
+fi
+NT="$NCH/NativeThread.c"
+if [ -f "$NT" ] && ! grep -q __amigaos4__ "$NT"; then
+    # keep the no-op (non-signalling) variant on amiga: clib4 pthread_kill can't
+    # interrupt; blocked-IO interruption degrades to close()-based wakeup.
+    sed -i 's@#ifdef __linux__@#if defined(__linux__) \&\& !defined(__amigaos4__)@g' "$NT"
+    sed -i 's@defined(_ALLBSD_SOURCE)@(defined(_ALLBSD_SOURCE) \&\& !defined(__amigaos4__))@g' "$NT"
+    echo "  adapted NativeThread.c (no-op signalling)"
+fi
+# NativeThread.c falls into the #error branch on amiga -- give it a benign signal
+# number (clib4 sigaction installs the null handler fine; pthread_kill is a
+# set-bit no-op, so blocked-IO interruption simply isn't async -- acceptable).
+if [ -f "$NT" ] && ! grep -q "INTERRUPT_SIGNAL SIGUSR2" "$NT"; then
+    perl -0pi -e 's/#error "missing platform-specific definition here"/#include <pthread.h>\n  #include <signal.h>\n  #define INTERRUPT_SIGNAL SIGUSR2  \/* amiga: benign; not async *\//' "$NT"
+    echo "  adapted NativeThread.c (amiga INTERRUPT_SIGNAL)"
+fi
+# UnixNativeDispatcher open0/openat0: translate the Java-side (Linux-valued)
+# open flags to clib4's encoding.
+if [ -f "$UND" ] && ! grep -q amiga_oflags "$UND"; then
+    sed -i 's@(int)oflags@amiga_oflags((int)oflags)@g' "$UND"
+    echo "  adapted UnixNativeDispatcher.c (amiga_oflags)"
+fi
+# UnixNativeDispatcher: clib4's struct stat has no st_atim timespec members --
+# skip the nanosecond fields on amiga (whole-second timestamps).
+if [ -f "$UND" ] && ! grep -q "200809L) || defined(__solaris__)) && !defined(__amigaos4__)" "$UND"; then
+    sed -i 's@#if (_POSIX_C_SOURCE >= 200809L) || defined(__solaris__)@#if ((_POSIX_C_SOURCE >= 200809L) || defined(__solaris__)) \&\& !defined(__amigaos4__)@' "$UND"
+    echo "  adapted UnixNativeDispatcher.c (no st_atim nsec)"
+fi
+
+echo "  javah (nio classes from Temurin rt.jar)"
+/opt/jdk8/bin/javah -d "$HDR" -classpath "$RTJAR" \
+  sun.nio.fs.UnixNativeDispatcher sun.nio.fs.UnixCopyFile sun.nio.fs.LinuxNativeDispatcher \
+  sun.nio.ch.FileChannelImpl sun.nio.ch.FileDispatcherImpl sun.nio.ch.FileKey \
+  sun.nio.ch.IOUtil sun.nio.ch.NativeThread sun.nio.ch.IOStatus \
+  java.lang.Integer java.lang.Long 2>&1 | tail -2
+
+NIOINC="-I $HDR $EXP -I $J/src/solaris/native/common -I $NCH \
+ -I $J/src/share/native/sun/nio/ch -I $J/src/share/native/java/io \
+ -I $J/src/solaris/native/java/io -include $COMPAT/jdkdefs.h"
+mkdir -p "$OUT/libnio"
+nok=0; nfail=0
+for c in "$NFS/UnixNativeDispatcher.c" "$NFS/UnixCopyFile.c" "$NFS/LinuxNativeDispatcher.c" \
+         "$NCH/FileChannelImpl.c" "$NCH/FileDispatcherImpl.c" "$NCH/FileKey.c" \
+         "$NCH/IOUtil.c" "$NCH/NativeThread.c"; do
+    [ -f "$c" ] || continue
+    if $CC -D_GNU_SOURCE $NIOINC -c "$c" -o "$OUT/libnio/$(basename "$c" .c).o" 2>"$OUT/e"; then
+        nok=$((nok+1))
+    else
+        nfail=$((nfail+1)); echo "  NIO FAIL $(basename "$c")"
+        grep -m2 -E "error:|No such file" "$OUT/e" | sed 's/^/        /'
+    fi
+done
+# FileDispatcherImpl.seek0: native added in later 8u (8u77 had FileChannelImpl
+# position0 instead); Temurin's rt.jar calls seek0 -> supply it (7th skew).
+cat > "$OUT/libnio/seek0_compat.c" <<'SEOF'
+#include "jni.h"
+#include "jni_util.h"
+#include "jlong.h"
+#include "nio_util.h"
+#include "sun_nio_ch_IOStatus.h"
+#include <unistd.h>
+JNIEXPORT jlong JNICALL
+Java_sun_nio_ch_FileDispatcherImpl_seek0(JNIEnv *env, jclass clazz,
+                                         jobject fdo, jlong offset)
+{
+    jint fd = fdval(env, fdo);
+    off_t result = (offset < 0) ? lseek(fd, 0, SEEK_CUR)
+                                : lseek(fd, (off_t)offset, SEEK_SET);
+    if (result >= 0)
+        return (jlong)result;
+    JNU_ThrowIOExceptionWithLastError(env, "lseek failed");
+    return sun_nio_ch_IOStatus_THROWN;
+}
+SEOF
+if $CC -D_GNU_SOURCE $NIOINC -c "$OUT/libnio/seek0_compat.c" -o "$OUT/libnio/seek0_compat.o" 2>"$OUT/e"; then
+    nok=$((nok+1)); echo "  seek0 compat OK"
+else
+    echo "  seek0 compat FAIL"; head -4 "$OUT/e"
+fi
+
+echo "  libnio compile: $nok OK, $nfail FAILED"
+if ppc-amigaos-gcc -mcrt=clib4 -fPIC -shared -Wl,-rpath=SYS:Test \
+       -o "$OUT/libnio.so" "$OUT"/libnio/*.o 2>"$OUT/e"; then
+    echo "  libnio.so OK ($(wc -c < "$OUT/libnio.so") bytes)"
+else
+    echo "  libnio.so LINK FAIL"; head -10 "$OUT/e"
+fi
+
+# stub libnet.so: sun.nio.ch.IOUtil.load() does loadLibrary("net") before "nio";
+# an empty lib satisfies it (real java.net natives are a future work item --
+# they'd surface as UnsatisfiedLinkError on first socket use).
+echo 'static int amiga_libnet_stub;' > "$OUT/libnio/net_stub.c"
+$CC -c "$OUT/libnio/net_stub.c" -o "$OUT/libnio/net_stub.o" 2>/dev/null
+ppc-amigaos-gcc -mcrt=clib4 -fPIC -shared -Wl,-rpath=SYS:Test \
+    -o "$OUT/libnet.so" "$OUT/libnio/net_stub.o" 2>/dev/null \
+    && echo "  libnet.so (stub) OK ($(wc -c < "$OUT/libnet.so") bytes)"
 
 echo "=== built ==="; ls -l "$OUT"/*.a "$OUT"/*.so "$OUT"/niopatch.zip 2>/dev/null
