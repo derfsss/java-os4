@@ -51,6 +51,40 @@ cat > "$COMPAT/jdkdefs.h" <<'EOF'
 #ifndef RELEASE
 #define RELEASE "amigaos4"   /* os.version string (normally uname -r) */
 #endif
+/* Amiga path normaliser for the clib4/AmigaDOS layer.  OpenJDK's java.io models
+   paths as Unix-absolute (leading '/'), but AmigaDOS uses "Volume:dir/file" with
+   NO leading '/'.  We present canonical paths to Java WITH a leading '/' (so
+   File.isAbsolute()/toURI() don't double the path), then strip it here before any
+   clib4 stat/open.  Also strips a leading "./" (AmigaDOS has no current-dir prefix).
+   "/Volume:..." -> "Volume:...", "./x" -> "x", "RAM:x"/"x" unchanged. */
+static const char *amiga_path(const char *p) {
+    if (p != 0) {
+        if (p[0] == '.' && p[1] == '/') {
+            p += 2;
+        } else if (p[0] == '/') {
+            const char *c = p + 1;
+            while (*c != 0 && *c != '/') { if (*c == ':') { p += 1; break; } c++; }
+        }
+    }
+    return p;
+}
+/* Amiga "canonicalize": no symlinks to resolve in practice; just normalise to the
+   AmigaDOS form (amiga_path) and present it back to Java WITH a leading '/' so
+   File.isAbsolute()/toURI() treat it as absolute (else getAbsoluteFile doubles it). */
+static int amiga_canonicalize(char *path, char *out, int len) {
+    const char *ap = amiga_path(path);
+    int n = 0;
+    if (len < 2) { if (len > 0) out[0] = 0; return 0; }
+    out[n++] = '/';
+    while (*ap != 0 && n < len - 1) {
+        /* collapse "/./" and a leading "./" segment */
+        if (ap[0] == '.' && ap[1] == '/' && (n == 1 || out[n-1] == '/')) { ap += 2; continue; }
+        out[n++] = *ap++;
+    }
+    if (n > 1 && out[n-1] == '/') n--;   /* drop trailing '/' */
+    out[n] = 0;
+    return 0;
+}
 #endif
 EOF
 
@@ -91,9 +125,28 @@ fi
 # File.exists()/loadLibrary() resolve CWD-relative files (e.g. ./libzip.so during
 # System.initializeSystemClass loadLibrary("zip")).  Idempotent.
 UFS="$J/src/solaris/native/java/io/UnixFileSystem_md.c"
-if [ -f "$UFS" ] && ! grep -q "path += 2" "$UFS"; then
-    perl -0pi -e 's/(statMode\(const char \*path, int \*mode\)\s*\{\n\s*struct stat64 sb;\n)/$1#ifdef __amigaos4__\n    if (path[0] == \x27.\x27 && path[1] == \x27\/\x27) path += 2;  \/* AmigaDOS has no .\/ prefix *\/\n#endif\n/' "$UFS"
-    echo "=== adapted UnixFileSystem_md.c statMode (strip leading ./) ==="
+if [ -f "$UFS" ] && ! grep -q "amiga_path" "$UFS"; then
+    # statMode(): normalise ("./", "/Volume:") -> AmigaDOS form before stat64.
+    perl -0pi -e 's/(statMode\(const char \*path, int \*mode\)\s*\{\n\s*struct stat64 sb;\n)/$1#ifdef __amigaos4__\n    path = amiga_path(path);\n#endif\n/' "$UFS"
+    # canonicalize0(): return a leading-"/" absolute path so File.toURI()/isAbsolute()
+    # don't double the Amiga "Volume:" path (the -classpath/URLClassPath bug).
+    sed -i 's@canonicalize((char \*)path,@amiga_canonicalize((char *)path,@' "$UFS"
+    # other stat/access/chmod sites (getLastModified/getLength/checkAccess/setPermission)
+    sed -i 's@stat64(path, &sb)@stat64(amiga_path(path), \&sb)@g; s@access(path, mode)@access(amiga_path(path), mode)@g; s@chmod(path, mode)@chmod(amiga_path(path), mode)@g' "$UFS"
+    echo "=== adapted UnixFileSystem_md.c (amiga_path/amiga_canonicalize) ==="
+fi
+
+# zip_util.c ZFILE_Open + io_util_md.c handleOpen: normalise Amiga "/Volume:"/"./" paths
+# before the actual open() (so URLClassPath can open jars from the canonicalised
+# leading-"/" path, and FileInputStream/Output work on them too).
+ZU="$J/src/share/native/java/util/zip/zip_util.c"
+if [ -f "$ZU" ] && ! grep -q amiga_path "$ZU"; then
+    perl -0pi -e 's/(ZFILE_Open\(const char \*fname, int flags\) \{\n)/$1#ifdef __amigaos4__\n    fname = amiga_path(fname);\n#endif\n/' "$ZU"
+    echo "=== adapted zip_util.c ZFILE_Open (amiga_path) ==="
+fi
+if [ -f "$IOMD" ] && ! grep -q amiga_path "$IOMD"; then
+    sed -i 's@RESTARTABLE(open64(path,@RESTARTABLE(open64(amiga_path(path),@' "$IOMD"
+    echo "=== adapted io_util_md.c handleOpen (amiga_path) ==="
 fi
 
 # Temurin 8 (late 8u) renamed FileInputStream.available -> available0 (JDK-8080679);
@@ -213,6 +266,17 @@ for d in $LJDIRS; do
     done
 done
 echo "  libjava compile: $ok OK, $fail FAILED"
+
+# java.lang.Shutdown.beforeHalt(): native added in later 8u (absent in 8u77) -- a
+# shutdown hook that does nothing essential.  Supply a no-op so the VM exits without
+# UnsatisfiedLinkError.  (Temurin-vs-8u77 skew, "added" kind like getManifestNum.)
+cat > "$OUT/libjava/shutdown_beforehalt_compat.c" <<'SEOF'
+#include "jni.h"
+JNIEXPORT void JNICALL
+Java_java_lang_Shutdown_beforeHalt(JNIEnv *env, jclass cls) { }
+SEOF
+$CC $LJINC -c "$OUT/libjava/shutdown_beforehalt_compat.c" -o "$OUT/libjava/shutdown_beforehalt_compat.o" 2>"$OUT/e" \
+    && echo "  Shutdown.beforeHalt compat OK" || { echo "  beforeHalt compat FAIL"; head -4 "$OUT/e"; }
 
 echo "=== link libjava.so ==="
 # Recipe (CoreLibraries.gmk): libjava links -lverify + static libfdlibm.  The VM

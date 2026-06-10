@@ -1,7 +1,7 @@
 From 87c87fbe99dc7a6c185c6eb16b177ff0ddd105a4 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 22:30:57 +0100
-Subject: [PATCH 1/2] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
+Subject: [PATCH 1/3] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
 
 JAmiga JamVM revival on ppc-amigaos-gcc 11.5 + clib4, plus OpenJDK 8
 (Temurin 8 rt.jar) class-library integration:
@@ -1785,7 +1785,7 @@ index b901856..eb21865 100644
 From 79fb4ab57ff81a7279be88cf0334bd584109de78 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 23:20:17 +0100
-Subject: [PATCH 2/2] jam.c: enable the real sun.misc.Launcher system
+Subject: [PATCH 2/3] jam.c: enable the real sun.misc.Launcher system
  classloader on AmigaOS
 
 The earlier "no-output heisenbug" was missing openjdk natives (CDS stubs,
@@ -1834,6 +1834,80 @@ index 2951d20..eccffab 100644
  #else
      if((system_loader = getSystemClassLoader()) == NULL)
          goto error;
+-- 
+2.49.0.windows.1
+
+
+From e2b4d148d6b362166ce208582d557202a455130c Mon Sep 17 00:00:00 2001
+From: Richard Gibbs <wofderfs@googlemail.com>
+Date: Wed, 10 Jun 2026 07:36:47 +0100
+Subject: [PATCH 3/3] Amiga path model: strip leading "/Volume:" in JVM_Open +
+ nativeLibOpen
+
+java.io presents canonical paths as Unix-absolute ("/Volume:dir/file") so
+File.isAbsolute()/toURI() don't double the Amiga path (the -classpath/URL bug).
+The native file-open chokepoints strip the leading '/' (and "./") back to a real
+AmigaDOS path: JVM_Open (ZipFile/JarFile and friends open through it) and
+nativeLibOpen (loadLibrary/dlopen).  With this + the openjdk-natives path
+adaptations, File/URL round-trips and direct JarFile/ZipFile opens work on Amiga.
+(Full URLClassLoader -classpath still blocked by sun.nio.fs platform detection.)
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ src/classlib/openjdk/jvm.c | 13 +++++++++++++
+ src/os/amiga/os.c          | 15 +++++++++++++--
+ 2 files changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/src/classlib/openjdk/jvm.c b/src/classlib/openjdk/jvm.c
+index bfbbb93..668a476 100644
+--- a/src/classlib/openjdk/jvm.c
++++ b/src/classlib/openjdk/jvm.c
+@@ -1533,6 +1533,19 @@ jboolean JVM_IsSameClassPackage(JNIEnv *env, jclass class1, jclass class2) {
+ jint JVM_Open(const char *fname, jint flags, jint mode) {
+     int result;
+ 
++#ifdef __amigaos4__
++    /* java.io presents canonical paths as Unix-absolute ("/Volume:dir/...") so
++       File.toURI()/isAbsolute() behave; strip the leading '/' for volume paths
++       (and a leading "./") so clib4/AmigaDOS open() gets a real path.  Central
++       fix: ZipFile/JarFile and friends open via JVM_Open. */
++    if(fname[0] == '.' && fname[1] == '/')
++        fname += 2;
++    else if(fname[0] == '/') {
++        const char *c = fname + 1;
++        while(*c && *c != '/') { if(*c == ':') { fname++; break; } c++; }
++    }
++#endif
++
+     TRACE("JVM_Open(fname=%s, flags=%d, mode=%d)", fname, flags, mode);
+ 
+     /* O_DELETE is a special classlib flag which indicates that
+diff --git a/src/os/amiga/os.c b/src/os/amiga/os.c
+index aa1237b..1a6f5be 100644
+--- a/src/os/amiga/os.c
++++ b/src/os/amiga/os.c
+@@ -78,8 +78,19 @@ char *nativeLibPath() {
+ }
+ 
+ void *nativeLibOpen(char *path) {
+-    void *h = dlopen(path, RTLD_LAZY);
+-    DebugPrintF("[DLOPEN] '%s' -> %p%s\n", path, h,
++    /* java.io presents canonical paths as Unix-absolute ("/Volume:dir/...") so
++       File.toURI()/isAbsolute() behave; strip the leading '/' for volume paths
++       (and a leading "./") so clib4 dlopen gets a real AmigaDOS path. */
++    char *p = path;
++    void *h;
++    if(p[0] == '.' && p[1] == '/')
++        p += 2;
++    else if(p[0] == '/') {
++        char *c = p + 1;
++        while(*c && *c != '/') { if(*c == ':') { p++; break; } c++; }
++    }
++    h = dlopen(p, RTLD_LAZY);
++    DebugPrintF("[DLOPEN] '%s' -> %p%s\n", p, h,
+                 h ? "" : " FAILED");
+     return h;
+ }
 -- 
 2.49.0.windows.1
 
