@@ -37,6 +37,10 @@ final class AmigaEventPump implements Runnable {
     private static final int IEQ_RBUTTON    = 0x2000;
     private static final int IEQ_LEFTBUTTON = 0x4000;
 
+    /** key-event tracing (-Damiga.debug.keys=true) */
+    private static final boolean DEBUG_KEYS =
+        Boolean.getBoolean("amiga.debug.keys");
+
     /** settle time before a dirty frame is blitted */
     private static final int BLIT_SETTLE_MS = 30;
     /** but never let a continuously-repainted frame starve longer than this */
@@ -123,6 +127,31 @@ final class AmigaEventPump implements Runnable {
 
     private void post(AmigaWindowPeer p, java.awt.AWTEvent e) {
         SunToolkit.postEvent(SunToolkit.targetToAppContext(p.target), e);
+    }
+
+    private static void dispatchOnEDT(final java.awt.AWTEvent e) {
+        java.awt.EventQueue.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                ((java.awt.Component) e.getSource()).dispatchEvent(e);
+            }
+        });
+    }
+
+    private static void dispatchKeyOnEDT(final AmigaWindowPeer p, final int id,
+                                         final long when, final int mods,
+                                         final int keyCode, final char keyChar) {
+        java.awt.EventQueue.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                java.awt.Component owner =
+                    java.awt.KeyboardFocusManager
+                        .getCurrentKeyboardFocusManager().getFocusOwner();
+                java.awt.Component tgt = owner != null ? owner : p.target;
+                tgt.dispatchEvent(new KeyEvent(tgt, id, when, mods,
+                                               keyCode, keyChar));
+            }
+        });
     }
 
     private static int modifiers(int qual) {
@@ -214,16 +243,22 @@ final class AmigaEventPump implements Runnable {
             case AmigaNative.EV_KEY_DOWN:
             case AmigaNative.EV_KEY_UP: {
                 boolean press = (type == AmigaNative.EV_KEY_DOWN);
+                if (DEBUG_KEYS)
+                    System.out.println("[KEY] " + (press ? "down" : "up")
+                        + " raw=0x" + Integer.toHexString(code)
+                        + " ch=" + ch + " qual=0x" + Integer.toHexString(qual));
                 int raw = code & 0x7F;
                 int keyCode = rawToVK(raw, ch);
                 char keyChar = ch != 0 ? (char) ch : KeyEvent.CHAR_UNDEFINED;
                 int mods = modifiers(qual);
-                post(p, new KeyEvent(p.target,
-                    press ? KeyEvent.KEY_PRESSED : KeyEvent.KEY_RELEASED,
-                    when, mods, keyCode, keyChar));
+                /* dispatch on the EDT, sourcing the event at the CURRENT focus
+                   owner (resolved there -- the KFM holds it, not our peer) */
+                dispatchKeyOnEDT(p, press ? KeyEvent.KEY_PRESSED
+                                          : KeyEvent.KEY_RELEASED,
+                                 when, mods, keyCode, keyChar);
                 if (press && ch != 0 && isTypedChar(ch))
-                    post(p, new KeyEvent(p.target, KeyEvent.KEY_TYPED, when,
-                        mods, KeyEvent.VK_UNDEFINED, (char) ch));
+                    dispatchKeyOnEDT(p, KeyEvent.KEY_TYPED, when, mods,
+                                     KeyEvent.VK_UNDEFINED, (char) ch);
                 break;
             }
 

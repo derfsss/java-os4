@@ -20,7 +20,12 @@ echo "amigatoolkit.zip OK ($(wc -c < /work/build/amigatoolkit.zip) bytes)"
 "$JDK8/bin/javac" -source 8 -target 8 -encoding UTF-8 \
     -bootclasspath "$RT" \
     -d "$OUT/testclasses" \
-    /work/tests/SwingTest.java
+    /work/tests/SwingTest.java /work/tests/SwingType.java
 
 (cd "$OUT/testclasses" && "$JDK8/bin/jar" cf /work/build/swingtest.zip .)
 echo "swingtest.zip OK ($(wc -c < /work/build/swingtest.zip) bytes)"
+
+# injin: guest-side input injector (real-input GUI testing)
+ppc-amigaos-gcc -mcrt=clib4 -O2 -Wall -o /work/build/injin \
+    /work/src/tools/injin.c
+echo "injin OK ($(wc -c < /work/build/injin) bytes)"
