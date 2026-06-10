@@ -151,3 +151,76 @@ if ppc-amigaos-gcc -mcrt=clib4 -fPIC -shared -Wl,-rpath=SYS:Test \
 else
     echo "  libawt.so LINK FAIL"; head -10 "$OUT/e"
 fi
+
+echo "=== libfontmanager.so (freetype rasterizer; M2 fonts) ==="
+# C subset of share/native/sun/font: the freetype scaler + font/glyph natives.
+# The ICU layout engine (layout/*.cpp, C++ -- complex-script shaping only) is
+# NOT built; its sun.font.SunLayoutEngine natives surface only via TextLayout
+# of complex scripts.  freetype: SDK/local clib4 static libfreetype.a.
+FT_INC="-I /opt/ppc-amigaos/ppc-amigaos/SDK/local/common/include \
+ -I /opt/ppc-amigaos/ppc-amigaos/SDK/local/common/include/freetype2"
+FT_LIB="-L /opt/ppc-amigaos/ppc-amigaos/SDK/local/clib4/lib"
+FONTFILES="sunFont.c freetypeScaler.c DrawGlyphList.c AccelGlyphCache.c"
+FONTSRC="$SH/font"
+FMINC="-I $HDR -I $COMPAT $FT_INC \
+ -I $J/src/share/javavm/export -I $J/src/solaris/javavm/export \
+ -I $J/src/share/native/common -I $J/src/solaris/native/common \
+ -I $FONTSRC -I $SH/awt/image/cvutils -I $SH/java2d -I $SOL/java2d \
+ -I $SH/java2d/loops -I $SH/java2d/pipe -I $SH/awt/debug -I $SH/awt \
+ -include $COMPAT/jdkdefs.h"
+
+FCLASSES=$(cat $(for f in $FONTFILES; do echo "$FONTSRC/$f"; done) "$FONTSRC"/*.h 2>/dev/null \
+    | grep -ohE '"(java|sun)_[A-Za-z0-9_]+\.h"' \
+    | sed 's/"//g; s/\.h$//; s/_/./g' | sort -u)
+for c in $FCLASSES; do
+    /opt/jdk8/bin/javah -d "$HDR" -classpath "$RTJAR" "$c" >/dev/null 2>&1 || true
+done
+
+mkdir -p "$OUT/libfontmanager"
+fok=0; ffail=0
+for f in $FONTFILES; do
+    if $CC $FMINC -c "$FONTSRC/$f" -o "$OUT/libfontmanager/$(basename "$f" .c).o" 2>"$OUT/e"; then
+        fok=$((fok+1))
+    else
+        ffail=$((ffail+1)); echo "  FONT FAIL $f"
+        grep -m2 -E "error:|No such file" "$OUT/e" | sed 's/^/        /'
+    fi
+done
+# fontconfig bridge stubs: no libfontconfig on AmigaOS.  getFontConfig leaves
+# FontConfigInfo unfilled -> FcFontConfiguration.init() fails -> the font manager
+# falls back to MFontConfiguration + java.home/lib/fontconfig.properties, and
+# fonts are registered from java.home/lib/fonts.  (fontpath.c is X11-heavy and
+# not built.)
+cat > "$OUT/libfontmanager/fontconfig_stub.c" <<'FCEOF'
+#include "jni.h"
+JNIEXPORT jint JNICALL
+Java_sun_font_FontConfigManager_getFontConfigVersion(JNIEnv *env, jclass cls)
+{ return 0; }
+JNIEXPORT void JNICALL
+Java_sun_font_FontConfigManager_getFontConfig(JNIEnv *env, jclass cls,
+    jstring locale, jobject fcInfo, jobjectArray fcCompFonts, jboolean prefLocale)
+{ /* leave fcInfo unfilled: Fc config init fails -> properties fallback */ }
+JNIEXPORT jint JNICALL
+Java_sun_font_FontConfigManager_getFontConfigAASettings(JNIEnv *env, jclass cls,
+    jstring locale, jstring fcFamily)
+{ return -1; }
+JNIEXPORT jstring JNICALL
+Java_sun_awt_FcFontManager_getFontPathNative(JNIEnv *env, jobject thiz,
+    jboolean noType1, jboolean isX11)
+{ return (*env)->NewStringUTF(env, ""); }
+FCEOF
+if $CC $FMINC -c "$OUT/libfontmanager/fontconfig_stub.c" -o "$OUT/libfontmanager/fontconfig_stub.o" 2>"$OUT/e"; then
+    fok=$((fok+1)); echo "  fontconfig stubs OK"
+else
+    echo "  fontconfig stubs FAIL"; head -4 "$OUT/e"
+fi
+
+echo "  libfontmanager compile: $fok OK, $ffail FAILED"
+if ppc-amigaos-gcc -mcrt=clib4 -fPIC -shared -Wl,-rpath=SYS:Test \
+       -o "$OUT/libfontmanager.so" "$OUT"/libfontmanager/*.o $FT_LIB -lfreetype 2>"$OUT/e"; then
+    echo "  libfontmanager.so OK ($(wc -c < "$OUT/libfontmanager.so") bytes)"
+else
+    echo "  libfontmanager.so LINK FAIL"; head -10 "$OUT/e"
+fi
+echo "  undefined check:"; ppc-amigaos-nm -D -u "$OUT/libfontmanager.so" 2>/dev/null \
+    | grep -vE "Jam_|JVM_|JNU_|JNI_|jio_|jvm|__|mem|str|malloc|free|calloc|realloc|printf|sprintf|fprintf|qsort|getenv|sqrt|floor|ceil|pow|abs|fopen|fclose|fread|fseek|ftell|fflush|sscanf|longjmp|setjmp" | head -8
