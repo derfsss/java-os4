@@ -68,6 +68,7 @@ class AmigaWindowPeer implements WindowPeer {
     private final RepaintArea paintArea = new RepaintArea();
 
     private int width, height;
+    private int lastSentX = Integer.MIN_VALUE, lastSentY = Integer.MIN_VALUE;
 
     AmigaWindowPeer(Window target) {
         this.target = target;
@@ -84,6 +85,49 @@ class AmigaWindowPeer implements WindowPeer {
         if (target instanceof Dialog)
             return ((Dialog) target).getTitle();
         return "Java";
+    }
+
+    boolean isTargetResizable() {
+        if (target instanceof Frame)
+            return ((Frame) target).isResizable();
+        if (target instanceof Dialog)
+            return ((Dialog) target).isResizable();
+        return false;
+    }
+
+    /* user resized the Intuition window (IDCMP_NEWSIZE): adopt the new inner
+       size, then sync the AWT target on the EDT.  setBounds() sees the size
+       already matching and only no-ops the native move -- no feedback loop. */
+    void handleNativeResize(final int w, final int h) {
+        synchronized (imageLock) {
+            if (w == width && h == height)
+                return;
+            width = Math.max(w, 1);
+            height = Math.max(h, 1);
+            BufferedImage ni =
+                new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = ni.createGraphics();
+            g.drawImage(image, 0, 0, null);
+            g.dispose();
+            image = ni;
+        }
+        java.awt.EventQueue.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    target.setSize(w, h);
+                    /* Component.reshape skips ComponentEvents for top-level
+                       windows ("sent from peer or native code", 5025858) --
+                       that is us */
+                    target.dispatchEvent(new java.awt.event.ComponentEvent(
+                        target, java.awt.event.ComponentEvent.COMPONENT_RESIZED));
+                    target.validate();
+                } catch (Throwable t) {
+                    System.out.println("[RSZ] resize sync failed: " + t);
+                }
+            }
+        });
+        postPaint(0, 0, w, h);
     }
 
     BufferedImage getImage() {
@@ -107,7 +151,8 @@ class AmigaWindowPeer implements WindowPeer {
     public void setVisible(boolean v) {
         if (v) {
             if (handle == 0) {
-                handle = AmigaNative.open0(width, height, windowTitle());
+                handle = AmigaNative.open0(width, height, windowTitle(),
+                                           isTargetResizable());
                 if (handle != 0) {
                     AmigaEventPump.getPump().register(this);
                     markDirty();
@@ -156,8 +201,17 @@ class AmigaWindowPeer implements WindowPeer {
                 AmigaNative.resize0(handle, w, h);
             postPaint(0, 0, w, h);
         }
-        if (handle != 0)
-            AmigaNative.move0(handle, x, y);
+        /* Only move when the Java-side position actually changes.  The first
+           setBounds after open merely adopts Java's (insets-normalized) idea
+           of the location -- the native window was placed by open0, and Java
+           never knew that position; moving here would yank it to (0,~32). */
+        if (handle != 0 && (x != lastSentX || y != lastSentY)) {
+            boolean first = (lastSentX == Integer.MIN_VALUE);
+            lastSentX = x;
+            lastSentY = y;
+            if (!first)
+                AmigaNative.move0(handle, x, y);
+        }
     }
 
     @Override

@@ -119,6 +119,32 @@ int main(int argc, char **argv)
         } else if (!strcmp(argv[i], "RIGHTCLICK")) {
             ok = do_button(IECODE_RBUTTON, IEQUALIFIER_RBUTTON);
             i++;
+        } else if (!strcmp(argv[i], "DOWN")) {
+            struct InputEvent ie;
+            ev_clear(&ie);
+            ie.ie_Class = IECLASS_RAWMOUSE;
+            ie.ie_Code = IECODE_LBUTTON;
+            ie.ie_Qualifier = IEQUALIFIER_LEFTBUTTON;
+            ok = send_event(&ie);
+            i++;
+        } else if (!strcmp(argv[i], "UP")) {
+            struct InputEvent ie;
+            ev_clear(&ie);
+            ie.ie_Class = IECLASS_RAWMOUSE;
+            ie.ie_Code = IECODE_LBUTTON | IECODE_UP_PREFIX;
+            ok = send_event(&ie);
+            i++;
+        } else if (!strcmp(argv[i], "MOVE") && i + 2 < argc) {
+            /* relative move with the left button held (for drags) */
+            struct InputEvent ie;
+            ev_clear(&ie);
+            ie.ie_Class = IECLASS_RAWMOUSE;
+            ie.ie_Code = IECODE_NOBUTTON;
+            ie.ie_Qualifier = IEQUALIFIER_LEFTBUTTON | IEQUALIFIER_RELATIVEMOUSE;
+            ie.ie_position.ie_xy.ie_x = atoi(argv[i + 1]);
+            ie.ie_position.ie_xy.ie_y = atoi(argv[i + 2]);
+            ok = send_event(&ie);
+            i += 3;
         } else if (!strcmp(argv[i], "KEY") && i + 1 < argc) {
             UWORD code = (UWORD)strtol(argv[i + 1], NULL, 0);
             UWORD qual = 0;

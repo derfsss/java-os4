@@ -21,7 +21,8 @@ class AmigaNative {
     static final int EV_NEWSIZE    = 7;
     static final int EV_REFRESH    = 8;
 
-    static native long open0(int w, int h, String title);
+    static native long open0(int w, int h, String title,
+                              boolean sizable);
     static native void blit0(long h, int[] px, int x, int y, int w, int hgt,
                              int stride);
     /* out[0]=rawcode out[1]=x out[2]=y out[3]=qualifier out[4]=char */

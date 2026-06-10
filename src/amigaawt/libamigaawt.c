@@ -68,7 +68,7 @@ static int ensure_libs(void) {
 #define EV_NEWSIZE     7
 #define EV_REFRESH     8
 
-static jlong do_open(JNIEnv *env, jint w, jint h, jstring title)
+static jlong do_open(JNIEnv *env, jint w, jint h, jstring title, int sizable)
 {
     struct Window *win;
     const char *t;
@@ -93,6 +93,11 @@ static jlong do_open(JNIEnv *env, jint w, jint h, jstring title)
         WA_CloseGadget,   TRUE,
         WA_DragBar,       TRUE,
         WA_DepthGadget,   TRUE,
+        WA_SizeGadget,    sizable ? TRUE : FALSE,
+        WA_MinWidth,      80,
+        WA_MinHeight,     60,
+        WA_MaxWidth,      ~0,
+        WA_MaxHeight,     ~0,
         WA_Activate,      TRUE,
         WA_SimpleRefresh, TRUE,
         WA_IDCMP,         IDCMP_CLOSEWINDOW | IDCMP_MOUSEBUTTONS |
@@ -212,7 +217,7 @@ static void do_close(jlong handle)
 JNIEXPORT jlong JNICALL
 Java_AmigaWindow_open0(JNIEnv *env, jclass cls, jint w, jint h, jstring title)
 {
-    return do_open(env, w, h, title);
+    return do_open(env, w, h, title, 0);
 }
 
 JNIEXPORT void JNICALL
@@ -238,9 +243,10 @@ Java_AmigaWindow_close0(JNIEnv *env, jclass cls, jlong handle)
 
 JNIEXPORT jlong JNICALL
 Java_sun_awt_amiga_AmigaNative_open0(JNIEnv *env, jclass cls,
-                                     jint w, jint h, jstring title)
+                                     jint w, jint h, jstring title,
+                                     jboolean sizable)
 {
-    return do_open(env, w, h, title);
+    return do_open(env, w, h, title, sizable);
 }
 
 JNIEXPORT void JNICALL

@@ -262,6 +262,10 @@ final class AmigaEventPump implements Runnable {
                 break;
             }
 
+            case AmigaNative.EV_NEWSIZE:
+                p.handleNativeResize(x, y);   /* vals[1]=innerW vals[2]=innerH */
+                break;
+
             case AmigaNative.EV_REFRESH:
                 p.markDirty();
                 break;
