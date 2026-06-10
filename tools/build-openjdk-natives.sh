@@ -353,4 +353,19 @@ else
     echo "  libzip.so LINK FAIL"; head -20 "$OUT/e"
 fi
 
-echo "=== built ==="; ls -l "$OUT"/*.a "$OUT"/*.so 2>/dev/null
+echo "=== niopatch.zip (bootclasspath-prepend NIO.2 platform patch) ==="
+# sun.nio.fs.DefaultFileSystemProvider in Temurin's rt.jar only recognises
+# Solaris/Linux/Mac/AIX -> AssertionError "Platform not recognized" on AmigaOS,
+# which kills URLClassLoader/-classpath.  Ship a patched class (always the generic
+# unix/Linux provider) PREPENDED on -Xbootclasspath.  Run with
+# -Dsun.nio.fs.chdirAllowed=true so provider construction needs no libnio natives.
+NIOP=/work/src/niopatch
+if [ -f "$NIOP/sun/nio/fs/DefaultFileSystemProvider.java" ]; then
+    (cd "$NIOP" \
+     && /opt/jdk8/bin/javac -source 8 -target 8 sun/nio/fs/DefaultFileSystemProvider.java 2>/dev/null \
+     && /opt/jdk8/bin/jar cf "$OUT/niopatch.zip" sun/nio/fs/DefaultFileSystemProvider.class) \
+    && echo "  niopatch.zip OK ($(wc -c < "$OUT/niopatch.zip") bytes)" \
+    || echo "  niopatch.zip FAIL"
+fi
+
+echo "=== built ==="; ls -l "$OUT"/*.a "$OUT"/*.so "$OUT"/niopatch.zip 2>/dev/null
