@@ -1,7 +1,7 @@
 From 87c87fbe99dc7a6c185c6eb16b177ff0ddd105a4 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 22:30:57 +0100
-Subject: [PATCH 1/6] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
+Subject: [PATCH 1/7] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
 
 JAmiga JamVM revival on ppc-amigaos-gcc 11.5 + clib4, plus OpenJDK 8
 (Temurin 8 rt.jar) class-library integration:
@@ -1785,7 +1785,7 @@ index b901856..eb21865 100644
 From 79fb4ab57ff81a7279be88cf0334bd584109de78 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 23:20:17 +0100
-Subject: [PATCH 2/6] jam.c: enable the real sun.misc.Launcher system
+Subject: [PATCH 2/7] jam.c: enable the real sun.misc.Launcher system
  classloader on AmigaOS
 
 The earlier "no-output heisenbug" was missing openjdk natives (CDS stubs,
@@ -1841,7 +1841,7 @@ index 2951d20..eccffab 100644
 From e2b4d148d6b362166ce208582d557202a455130c Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 07:36:47 +0100
-Subject: [PATCH 3/6] Amiga path model: strip leading "/Volume:" in JVM_Open +
+Subject: [PATCH 3/7] Amiga path model: strip leading "/Volume:" in JVM_Open +
  nativeLibOpen
 
 java.io presents canonical paths as Unix-absolute ("/Volume:dir/file") so
@@ -1915,7 +1915,7 @@ index aa1237b..1a6f5be 100644
 From 416f0e4d756e8a94ac74c1718b8edb6ea4dcaf9b Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 08:00:59 +0100
-Subject: [PATCH 4/6] properties.c: present user.dir as Unix-absolute
+Subject: [PATCH 4/7] properties.c: present user.dir as Unix-absolute
  ("/Volume:dir") on AmigaOS
 
 Part of the Amiga path model: java.io/java.nio see '/'-prefixed absolute paths
@@ -1964,7 +1964,7 @@ index b453d7b..19169ff 100644
 From 2552a6f5e94a3b271cf352ed72b887b4efd161f3 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 08:17:32 +0100
-Subject: [PATCH 5/6] Amiga launcher defaults: zero-flag -cp, java version
+Subject: [PATCH 5/7] Amiga launcher defaults: zero-flag -cp, java version
  "1.8.0"
 
 `jamvm-openjdk -cp app.jar Main` and `-version` now work with no extra flags
@@ -2116,7 +2116,7 @@ index ce73df6..742fc9c 100644
 From 4c1743055b88fd221bba7c481b03dee40e337b1a Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 10:04:13 +0100
-Subject: [PATCH 6/6] Cooperative GC safepoints for AmigaOS/clib4
+Subject: [PATCH 6/7] Cooperative GC safepoints for AmigaOS/clib4
  (multi-threaded stop-the-world)
 
 clib4's pthread_kill only sets a raw Exec signal bit -- the SIGUSR1 handler
@@ -2278,6 +2278,49 @@ index 6f4ccfc..84cc4ce 100644
  
  static void suspendHandler(int sig) {
      Thread *thread = threadSelf();
+-- 
+2.49.0.windows.1
+
+
+From e1c4e649d0f5647519fbb9dbd2a3cf2b41a2e8c8 Mon Sep 17 00:00:00 2001
+From: Richard Gibbs <wofderfs@googlemail.com>
+Date: Wed, 10 Jun 2026 11:59:19 +0100
+Subject: [PATCH 7/7] jni.c: FindClass must initialize the class (HotSpot
+ semantics)
+
+Jam_FindClass only loaded/linked; HotSpot's JNI FindClass also runs static
+initializers, and native code depends on the clinit side-effects -- libawt's
+Disposer_AddRecord lazily FindClass-es sun.java2d.Disposer expecting initIDs
+to have cached addRecordMID (it called CallStaticVoidMethod with a NULL
+methodID otherwise -> crash).  Run initClass() on the result; return NULL on
+initializer exception.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ src/jni.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/jni.c b/src/jni.c
+index 6edb60b..6886837 100644
+--- a/src/jni.c
++++ b/src/jni.c
+@@ -517,6 +517,16 @@ jclass Jam_FindClass(JNIEnv *env, const char *name) {
+ 
+     class = findClassFromClassLoader((char*) name, loader);
+ 
++    /* JNI FindClass must also INITIALIZE the class (HotSpot does); native
++       code depends on the clinit side-effects -- e.g. libawt's
++       Disposer_AddRecord lazily FindClass-es sun.java2d.Disposer expecting
++       its clinit to run initIDs and cache addRecordMID. */
++    if(class != NULL) {
++        initClass(class);
++        if(exceptionOccurred())
++            return NULL;
++    }
++
+     return addJNILref(class);
+ }
+ 
 -- 
 2.49.0.windows.1
 
