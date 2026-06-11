@@ -22,9 +22,20 @@ defaultDest = "SYS:Java"
 
 
 ##############################################
+# Does a file/drawer exist?
+def pathExists(path):
+    try:
+        amiga.stat(path)
+        return True
+    except:
+        return False
+
+
+##############################################
 # Create a drawer (and any missing parents).  The Installation Utility does
-# not create a non-existent alternatepath, so we make it ourselves.  MakeDir
-# on an existing drawer fails harmlessly (output discarded).
+# not create a non-existent alternatepath, so we make it ourselves.  Only
+# missing components are created -- MakeDir on an existing drawer returns a
+# warning (rc 10) that the installer would surface.
 def makeDirs(path):
     if path == "":
         return
@@ -40,7 +51,8 @@ def makeDirs(path):
         if part == "":
             continue
         cur = cur + part
-        amiga.system('MakeDir >NIL: *>NIL: "' + cur + '"')
+        if not pathExists(cur):
+            amiga.system('MakeDir "' + cur + '"')
         cur = cur + "/"
 
 
