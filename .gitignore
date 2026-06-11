@@ -20,3 +20,7 @@
 
 # Java build artefacts
 *.class
+
+# Python bytecode
+__pycache__/
+*.pyc
