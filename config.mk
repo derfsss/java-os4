@@ -1,6 +1,6 @@
 # Java-OS4 -- shared build configuration.
 # Included by sub-Makefiles / scripts to avoid duplicating Docker and compiler
-# settings.  Mirrors the house pattern from RadeonGCN-OS4/config.mk.
+# settings.
 
 # Base image (cross toolchain + SDK + clib4 + autotools, no host Java).
 DOCKER_BASE_IMAGE = amigaos4-gcc11:latest
