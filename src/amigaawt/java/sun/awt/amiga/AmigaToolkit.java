@@ -343,15 +343,15 @@ public final class AmigaToolkit extends SunToolkit {
 
     @Override
     public boolean isModalityTypeSupported(Dialog.ModalityType modalityType) {
-        /* Report only MODELESS supported -> AWT downgrades modal dialogs to
-           modeless (Dialog.setModalityType).  This is deliberate: a modal
-           JOptionPane/JDialog still BLOCKS correctly (showXxxDialog spins a
-           secondary EDT loop until the dialog hides, independent of native
-           modality), and the dialog stays clickable.  Declaring real modality
-           supported would arm AWT's modal event filter, which needs peer
-           setModalBlocked + input blocking we don't implement -- and which
-           swallowed the OK click in testing. */
-        return modalityType == Dialog.ModalityType.MODELESS;
+        /* Real modality: AWT's ModalEventFilter does the EDT-level blocking
+           purely in Java (it consults Window.isModalBlocked, set by
+           Dialog.modalShow regardless of the peer), so a modal dialog blocks
+           its parent and pumps its own events correctly.  The peer's
+           setModalBlocked additionally drops native input to blocked windows.
+           (Toolkit modal exclusion -- whole-app -- is not supported.) */
+        return modalityType == Dialog.ModalityType.MODELESS
+            || modalityType == Dialog.ModalityType.DOCUMENT_MODAL
+            || modalityType == Dialog.ModalityType.APPLICATION_MODAL;
     }
 
     @Override

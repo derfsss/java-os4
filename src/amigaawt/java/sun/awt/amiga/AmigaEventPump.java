@@ -181,6 +181,22 @@ final class AmigaEventPump implements Runnable {
         int ch = ev[4];
         long when = System.currentTimeMillis();
 
+        /* a modal dialog blocks this window: swallow input (AWT's filter does
+           the EDT-level block, this stops native input from even queuing) but
+           still let close/refresh/activation through */
+        if (p.isModalBlocked()) {
+            switch (type) {
+                case AmigaNative.EV_MOUSE_DOWN:
+                case AmigaNative.EV_MOUSE_UP:
+                case AmigaNative.EV_MOUSE_MOVE:
+                case AmigaNative.EV_KEY_DOWN:
+                case AmigaNative.EV_KEY_UP:
+                    return;
+                default:
+                    break;
+            }
+        }
+
         switch (type) {
             case AmigaNative.EV_CLOSE:
                 post(p, new WindowEvent(p.target, WindowEvent.WINDOW_CLOSING));
@@ -234,6 +250,21 @@ final class AmigaEventPump implements Runnable {
                 int mods = modifiers(qual);
                 boolean drag = (qual
                     & (IEQ_LEFTBUTTON | IEQ_MIDBUTTON | IEQ_RBUTTON)) != 0;
+                /* synthesize window-level ENTER/EXIT from bounds crossing
+                   (Intuition has no explicit pointer-left event); Swing's
+                   LightweightDispatcher turns these + MOVED into per-component
+                   rollover */
+                boolean inside = x >= 0 && y >= 0
+                    && x < p.target.getWidth() && y < p.target.getHeight();
+                if (inside && !p.mouseInside) {
+                    p.mouseInside = true;
+                    post(p, new MouseEvent(p.target, MouseEvent.MOUSE_ENTERED,
+                        when, mods, x, y, 0, false, MouseEvent.NOBUTTON));
+                } else if (!inside && p.mouseInside) {
+                    p.mouseInside = false;
+                    post(p, new MouseEvent(p.target, MouseEvent.MOUSE_EXITED,
+                        when, mods, x, y, 0, false, MouseEvent.NOBUTTON));
+                }
                 post(p, new MouseEvent(p.target,
                     drag ? MouseEvent.MOUSE_DRAGGED : MouseEvent.MOUSE_MOVED,
                     when, mods, x, y, 0, false, MouseEvent.NOBUTTON));

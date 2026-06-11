@@ -73,6 +73,12 @@ class AmigaWindowPeer implements WindowPeer {
     /** real inner-origin screen position (winpos0 at open, EV_MOVE after) */
     volatile int screenX, screenY;
 
+    /** non-null while a modal dialog blocks this window */
+    private volatile Dialog modalBlocker;
+
+    /** pump-owned: is the pointer currently inside the inner area? */
+    boolean mouseInside;
+
     AmigaWindowPeer(Window target) {
         this.target = target;
         Rectangle b = target.getBounds();
@@ -393,6 +399,14 @@ class AmigaWindowPeer implements WindowPeer {
 
     @Override
     public void setModalBlocked(Dialog blocker, boolean blocked) {
+        /* track it so the pump can drop native input to a blocked window;
+           AWT's ModalEventFilter does the EDT-level blocking, this just makes
+           the blocked window visibly inert to clicks too */
+        modalBlocker = blocked ? blocker : null;
+    }
+
+    boolean isModalBlocked() {
+        return modalBlocker != null;
     }
 
     @Override
