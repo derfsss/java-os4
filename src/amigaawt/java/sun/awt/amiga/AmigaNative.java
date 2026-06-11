@@ -20,6 +20,9 @@ class AmigaNative {
     static final int EV_KEY_UP     = 6;
     static final int EV_NEWSIZE    = 7;
     static final int EV_REFRESH    = 8;
+    static final int EV_ACTIVATE   = 9;
+    static final int EV_DEACTIVATE = 10;
+    static final int EV_MOVE       = 11;
 
     static native long open0(int w, int h, String title,
                               boolean sizable);
@@ -31,6 +34,8 @@ class AmigaNative {
     /* (width << 16) | height of the Workbench screen, 0 on failure */
     static native int screensize0();
     static native void resize0(long h, int w, int hgt);
+    /* inner-origin screen position: (x << 16) | y */
+    static native int winpos0(long h);
     static native void move0(long h, int x, int y);
     static native void settitle0(long h, String title);
     static native void tofront0(long h);

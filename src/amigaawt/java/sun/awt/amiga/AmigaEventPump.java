@@ -266,6 +266,20 @@ final class AmigaEventPump implements Runnable {
                 p.handleNativeResize(x, y);   /* vals[1]=innerW vals[2]=innerH */
                 break;
 
+            case AmigaNative.EV_MOVE:
+                p.handleNativeMove(x, y);     /* inner-origin screen coords */
+                break;
+
+            case AmigaNative.EV_ACTIVATE:
+                post(p, new sun.awt.TimedWindowEvent(p.target,
+                    WindowEvent.WINDOW_GAINED_FOCUS, null, when));
+                break;
+
+            case AmigaNative.EV_DEACTIVATE:
+                post(p, new sun.awt.TimedWindowEvent(p.target,
+                    WindowEvent.WINDOW_LOST_FOCUS, null, when));
+                break;
+
             case AmigaNative.EV_REFRESH:
                 p.markDirty();
                 break;

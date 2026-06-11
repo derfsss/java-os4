@@ -70,6 +70,9 @@ class AmigaWindowPeer implements WindowPeer {
     private int width, height;
     private int lastSentX = Integer.MIN_VALUE, lastSentY = Integer.MIN_VALUE;
 
+    /** real inner-origin screen position (winpos0 at open, EV_MOVE after) */
+    volatile int screenX, screenY;
+
     AmigaWindowPeer(Window target) {
         this.target = target;
         Rectangle b = target.getBounds();
@@ -154,13 +157,12 @@ class AmigaWindowPeer implements WindowPeer {
                 handle = AmigaNative.open0(width, height, windowTitle(),
                                            isTargetResizable());
                 if (handle != 0) {
+                    int pos = AmigaNative.winpos0(handle);
+                    screenX = (pos >> 16) & 0xFFFF;
+                    screenY = pos & 0xFFFF;
                     AmigaEventPump.getPump().register(this);
                     markDirty();
-                    /* tell the focus subsystem this window is now focused */
-                    SunToolkit.postEvent(SunToolkit.targetToAppContext(target),
-                        new TimedWindowEvent(target,
-                            WindowEvent.WINDOW_GAINED_FOCUS, null,
-                            System.currentTimeMillis()));
+                    /* focus arrives via IDCMP_ACTIVEWINDOW (WA_Activate) */
                     postPaint(0, 0, width, height);
                 }
             }
@@ -216,8 +218,35 @@ class AmigaWindowPeer implements WindowPeer {
 
     @Override
     public Point getLocationOnScreen() {
-        Point p = target.getLocation();
-        return new Point(p.x, p.y);
+        if (handle != 0)
+            return new Point(screenX, screenY);
+        return target.getLocation();
+    }
+
+    /* user moved the window (IDCMP_CHANGEWINDOW): adopt the real position and
+       sync the AWT target on the EDT.  lastSentX/Y updated FIRST so the
+       resulting peer.setBounds doesn't echo a native move. */
+    void handleNativeMove(final int x, final int y) {
+        if (x == screenX && y == screenY)
+            return;
+        screenX = x;
+        screenY = y;
+        lastSentX = x;
+        lastSentY = y;
+        java.awt.EventQueue.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    target.setLocation(x, y);
+                    /* Component.reshape skips ComponentEvents for top-level
+                       windows -- the peer owns them (JDK-5025858) */
+                    target.dispatchEvent(new java.awt.event.ComponentEvent(
+                        target, java.awt.event.ComponentEvent.COMPONENT_MOVED));
+                } catch (Throwable t) {
+                    System.out.println("[MOV] move sync failed: " + t);
+                }
+            }
+        });
     }
 
     @Override

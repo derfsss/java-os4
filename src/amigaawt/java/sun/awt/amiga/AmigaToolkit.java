@@ -343,6 +343,14 @@ public final class AmigaToolkit extends SunToolkit {
 
     @Override
     public boolean isModalityTypeSupported(Dialog.ModalityType modalityType) {
+        /* Report only MODELESS supported -> AWT downgrades modal dialogs to
+           modeless (Dialog.setModalityType).  This is deliberate: a modal
+           JOptionPane/JDialog still BLOCKS correctly (showXxxDialog spins a
+           secondary EDT loop until the dialog hides, independent of native
+           modality), and the dialog stays clickable.  Declaring real modality
+           supported would arm AWT's modal event filter, which needs peer
+           setModalBlocked + input blocking we don't implement -- and which
+           swallowed the OK click in testing. */
         return modalityType == Dialog.ModalityType.MODELESS;
     }
 

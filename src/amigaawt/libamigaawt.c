@@ -67,6 +67,9 @@ static int ensure_libs(void) {
 #define EV_KEY_UP      6
 #define EV_NEWSIZE     7
 #define EV_REFRESH     8
+#define EV_ACTIVATE    9
+#define EV_DEACTIVATE  10
+#define EV_MOVE        11
 
 static jlong do_open(JNIEnv *env, jint w, jint h, jstring title, int sizable)
 {
@@ -102,7 +105,9 @@ static jlong do_open(JNIEnv *env, jint w, jint h, jstring title, int sizable)
         WA_SimpleRefresh, TRUE,
         WA_IDCMP,         IDCMP_CLOSEWINDOW | IDCMP_MOUSEBUTTONS |
                           IDCMP_MOUSEMOVE | IDCMP_RAWKEY |
-                          IDCMP_NEWSIZE | IDCMP_REFRESHWINDOW,
+                          IDCMP_NEWSIZE | IDCMP_REFRESHWINDOW |
+                          IDCMP_ACTIVEWINDOW | IDCMP_INACTIVEWINDOW |
+                          IDCMP_CHANGEWINDOW,
         WA_ReportMouse,   TRUE,
         TAG_DONE);
     (*env)->ReleaseStringUTFChars(env, title, t);
@@ -158,9 +163,17 @@ static jint do_poll(JNIEnv *env, jlong handle, jintArray out, int n)
     switch (msg->Class) {
         case IDCMP_CLOSEWINDOW:  type = EV_CLOSE; break;
         case IDCMP_MOUSEBUTTONS:
-            type = (msg->Code & IECODE_UP_PREFIX) ? EV_MOUSE_UP : EV_MOUSE_DOWN;
+        case IDCMP_MOUSEMOVE:
+            /* IntuiMessage MouseX/Y are WINDOW-relative (even for GZZ
+               windows) -- convert to inner-relative for the Java side */
+            vals[1] = msg->MouseX - win->BorderLeft;
+            vals[2] = msg->MouseY - win->BorderTop;
+            if (msg->Class == IDCMP_MOUSEMOVE)
+                type = EV_MOUSE_MOVE;
+            else
+                type = (msg->Code & IECODE_UP_PREFIX) ? EV_MOUSE_UP
+                                                      : EV_MOUSE_DOWN;
             break;
-        case IDCMP_MOUSEMOVE:    type = EV_MOUSE_MOVE; break;
         case IDCMP_RAWKEY:
             if (msg->Code & IECODE_UP_PREFIX) {
                 type = EV_KEY_UP;
@@ -191,6 +204,14 @@ static jint do_poll(JNIEnv *env, jlong handle, jintArray out, int n)
             IIntuition->BeginRefresh(win);
             IIntuition->EndRefresh(win, TRUE);
             type = EV_REFRESH;
+            break;
+        case IDCMP_ACTIVEWINDOW:   type = EV_ACTIVATE; break;
+        case IDCMP_INACTIVEWINDOW: type = EV_DEACTIVATE; break;
+        case IDCMP_CHANGEWINDOW:
+            /* inner-origin screen position (move OR resize) */
+            vals[1] = win->LeftEdge + win->BorderLeft;
+            vals[2] = win->TopEdge + win->BorderTop;
+            type = EV_MOVE;
             break;
         default: break;
     }
@@ -300,7 +321,8 @@ Java_sun_awt_amiga_AmigaNative_resize0(JNIEnv *env, jclass cls, jlong handle,
         h + win->BorderTop + win->BorderBottom);
 }
 
-/* move the window so the OUTER top-left is at x,y on the screen */
+/* move the window so the INNER (GZZ) origin is at x,y on the screen --
+   Java window coordinates are the inner origin */
 JNIEXPORT void JNICALL
 Java_sun_awt_amiga_AmigaNative_move0(JNIEnv *env, jclass cls, jlong handle,
                                      jint x, jint y)
@@ -308,7 +330,23 @@ Java_sun_awt_amiga_AmigaNative_move0(JNIEnv *env, jclass cls, jlong handle,
     struct Window *win = (struct Window *)(uintptr_t)handle;
     if (win == NULL)
         return;
-    IIntuition->ChangeWindowBox(win, x, y, win->Width, win->Height);
+    IIntuition->ChangeWindowBox(win, x - win->BorderLeft, y - win->BorderTop,
+                                win->Width, win->Height);
+}
+
+/* inner-origin screen position: (x << 16) | y (clamped to 0) */
+JNIEXPORT jint JNICALL
+Java_sun_awt_amiga_AmigaNative_winpos0(JNIEnv *env, jclass cls, jlong handle)
+{
+    struct Window *win = (struct Window *)(uintptr_t)handle;
+    jint x, y;
+    if (win == NULL)
+        return 0;
+    x = win->LeftEdge + win->BorderLeft;
+    y = win->TopEdge + win->BorderTop;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    return (x << 16) | (y & 0xFFFF);
 }
 
 /* set the window title (Intuition keeps the pointer: install an AllocVec
