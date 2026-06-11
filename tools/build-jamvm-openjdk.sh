@@ -96,11 +96,24 @@ ppc-amigaos-gcc -mcrt=clib4 -shared -fPIC -Wl,-rpath=SYS:Test \
     -o "$DEST/libjvm.so" $OBJS
 echo "  libjvm.so OK ($(wc -c < "$DEST/libjvm.so") bytes)"
 
+# AmigaOS $VER: cookie (read by the `Version` command), linked into the
+# launcher.  Version proper = the Java-OS4 project version (clean major.minor);
+# the OpenJDK class-library version follows as free text.
+PVER=$(cut -d. -f1,2 /work/VERSION 2>/dev/null)
+[ -n "$PVER" ] || PVER="0.0"
+JVER=$(sed -n 's/^JAVA_VERSION="\(.*\)"$/\1/p' /opt/jdk8/release 2>/dev/null)
+[ -n "$JVER" ] || JVER="1.8.0"
+JDATE=$(date +%d.%m.%Y)
+ppc-amigaos-gcc -mcrt=clib4 -O2 -fPIC \
+    -DJAVAOS4_VER="\"$PVER\"" -DJAVAOS4_JAVAVER="\"$JVER\"" \
+    -DJAVAOS4_DATE="\"$JDATE\"" \
+    -c /work/src/version/verstag.c -o "$OUT/verstag.o"
+
 # jamvm launcher = jam.c (main) linked AGAINST libjvm.so -- one shared VM instance
 # (so jam.c's main and any dlopen'd libjava see the same VM).
 echo "=== linking jamvm-openjdk launcher (-> libjvm.so) ==="
 ppc-amigaos-gcc -mcrt=clib4 -use-dynld -athread=native -Wl,-rpath=SYS:Test \
-    -o "$DEST/jamvm-openjdk" "$JAMO" -L"$DEST" -ljvm \
+    -o "$DEST/jamvm-openjdk" "$JAMO" "$OUT/verstag.o" -L"$DEST" -ljvm \
     -lpthread -lm -lrt -lz -lauto
 echo "LINK OK"
 ls -la "$DEST/libjvm.so" "$DEST/jamvm-openjdk"

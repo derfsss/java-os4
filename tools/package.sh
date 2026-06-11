@@ -21,7 +21,11 @@
 set -e
 
 VER=$(cat /work/VERSION 2>/dev/null || echo "0.0.0")
+PVER=$(echo "$VER" | cut -d. -f1,2)          # 0.5.0 -> 0.5 (clean major.minor)
 DATE=$(date +%d.%m.%Y)
+# Official Java version the runtime is built on (the class-library JDK).
+JVER=$(sed -n 's/^JAVA_VERSION="\(.*\)"$/\1/p' /opt/jdk8/release 2>/dev/null)
+[ -n "$JVER" ] || JVER="1.8.0"
 JDK8=/opt/jdk8
 B=/work/build
 N="$B/openjdk-natives"
@@ -42,14 +46,15 @@ cp "$B/libjvm.so"     "$RT/"
 # so the colon-free, CWD-relative default boot classpath resolves, and point
 # the loader at the bundled sobjs (the .so rpath is the dev build dir;
 # LD_LIBRARY_PATH="." overrides to the install drawer).
-cat > "$RT/java" <<'LAUNCH'
-.KEY args/F
-.BRA {
-.KET }
-CD JAVA:
-SetEnv LD_LIBRARY_PATH "."
-JAVA:jamvm-openjdk {args}
-LAUNCH
+{
+    echo ".KEY args/F"
+    echo ".BRA {"
+    echo ".KET }"
+    echo ";\$VER: Java-OS4 $PVER ($DATE) OpenJDK $JVER"
+    echo "CD JAVA:"
+    echo 'SetEnv LD_LIBRARY_PATH "."'
+    echo "JAVA:jamvm-openjdk {args}"
+} > "$RT/java"
 
 # --- runtime: OpenJDK + AWT natives ---------------------------------------
 for so in libjava libverify libzip libnio libnet \
