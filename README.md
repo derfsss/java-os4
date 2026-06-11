@@ -54,18 +54,14 @@ windows. See [`docs/`](docs/) for screenshots of each milestone.
 
 ## Quick start
 
-A packaged release is an `.lha` containing a self-contained `Java/` drawer.
+A packaged release is an `.lha` containing a `Java-OS4` installer drawer.
 
 1. Unpack it anywhere on your AmigaOS 4 machine.
-2. From the drawer, run the installer (it adds the `Java:` assign):
-
-   ```
-   Execute Install
-   ```
-
-   Add the printed `Assign Java: <path>` line to `S:User-Startup` to make it
-   permanent.
-3. Run programs:
+2. Double-click the **Java-OS4** drawer icon to launch the installer (it runs
+   under `Sys:Utilities/Installation Utility`). The wizard asks where to install
+   the runtime, copies it there, and adds a permanent `JAVA:` assign to
+   `S:User-Startup` (so it survives reboots).
+3. Run programs from a Shell:
 
    ```
    java -version
@@ -73,7 +69,7 @@ A packaged release is an `.lha` containing a self-contained `Java/` drawer.
    ```
 
    Swing/AWT applications need no extra flags. Application classpath entries are
-   resolved from the `Java:` drawer; reference jars elsewhere by absolute path.
+   resolved from the `JAVA:` drawer; reference jars elsewhere by absolute path.
 
 > `javac` is not included — compile on a host JDK 8 and copy the `.jar` over.
 
