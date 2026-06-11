@@ -27,27 +27,24 @@ working directory is the repository root.
 
 ## Build steps
 
-Each script runs inside the image and writes to `build/`:
+The `Makefile` drives the cross build (each target runs the matching `tools/`
+script inside the image and writes to `build/`):
 
 ```sh
-DR="docker run --rm -v $PWD:/work -v $CLIB4:/clib4 javaos4-build:latest sh"
-
-# 1. The VM: libjvm.so (shared) + the jamvm-openjdk launcher.
-$DR /work/tools/build-jamvm-openjdk.sh
-
-# 2. OpenJDK 8 core native libraries (libjava, libzip, libnio, libnet, ...).
-$DR /work/tools/build-openjdk-natives.sh
-
-# 3. AWT/Java2D natives (libawt, libfontmanager) + the Amiga windowing JNI.
-$DR /work/tools/build-awt-natives.sh
-$DR /work/tools/build-amigaawt.sh
-
-# 4. The sun.awt.amiga toolkit + test apps -> amigatoolkit.zip / swingtest.zip.
-$DR /work/tools/build-amigatoolkit.sh
-
-# 5. Assemble the install tree and the release archive.
-$DR /work/tools/package.sh        # -> build/release/Java/ and build/JavaOS4-<ver>.lha
+make image                        # build the build image, once
+make build   CLIB4=/path/to/clib4 # VM + OpenJDK/AWT natives + toolkit
+make dist                         # gather build/ -> build/release/Java/ + .lha
+make release CLIB4=/path/to/clib4 # build then dist, in one step
 ```
+
+`make build` expands to, in order: `build-jamvm-openjdk.sh` (the VM:
+`libjvm.so` + the `jamvm-openjdk` launcher), `build-openjdk-natives.sh`
+(`libjava`/`libzip`/`libnio`/`libnet`/…), `build-awt-natives.sh` +
+`build-amigaawt.sh` (`libawt`/`libfontmanager` + the Amiga windowing JNI), and
+`build-amigatoolkit.sh` (the `sun.awt.amiga` toolkit + test zips). `make dist`
+runs `package.sh`, which only gathers existing `build/` outputs — it compiles
+nothing and needs no clib4 mount. You can still invoke any `tools/` script by
+hand inside the image if you prefer.
 
 The class-library jars (`rt.jar`, `charsets.jar`, …) come from the Temurin 8 JDK
 in the build image; `package.sh` gathers them along with the VM, the native

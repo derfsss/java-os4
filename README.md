@@ -80,20 +80,19 @@ A packaged release is an `.lha` containing a self-contained `Java/` drawer.
 ## Building from source
 
 The toolchain runs in a Docker image — the AmigaOS 4 PowerPC cross compiler plus
-a host JDK 8. Build the image once, then run the build scripts inside it:
+a host JDK 8 — driven by the `Makefile`:
 
 ```sh
-# Build the build image (needs the amigaos4-gcc11 cross-toolchain base image).
-docker build -t javaos4-build:latest -f tools/Dockerfile .
-
-# Build the VM (libjvm.so + launcher), then the natives/toolkit, then package:
-docker run --rm -v "$PWD:/work" -v "$CLIB4:/clib4" javaos4-build:latest \
-    sh /work/tools/build-jamvm-openjdk.sh
-docker run --rm -v "$PWD:/work" -v "$CLIB4:/clib4" javaos4-build:latest \
-    sh /work/tools/package.sh               # -> build/JavaOS4-<ver>.lha
+make image                       # build the cross-build image (needs the
+                                 #   amigaos4-gcc11 base image), once
+make build  CLIB4=/path/to/clib4 # VM + native libraries + AWT toolkit
+make dist                        # assemble the install tree + the .lha release
+                                 #   -> build/JavaOS4-<ver>.lha
 ```
 
-(`$CLIB4` is a checkout of clib4.)
+`make release CLIB4=...` does `build` then `dist` in one step; `make help`
+lists every target. (`CLIB4` is a checkout of the clib4 C runtime, needed by the
+build targets but not by `dist`.)
 
 Full instructions, the build-script order, and how to run on QEMU or hardware
 are in **[docs/BUILDING.md](docs/BUILDING.md)**.

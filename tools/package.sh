@@ -1,8 +1,9 @@
 #!/bin/sh
 # Phase 5: assemble a relocatable Java-OS4 install tree and a .lha release.
 #
-# Runs in the javaos4-build container (has /opt/jdk8, the DejaVu fonts, lha,
-# and the cross toolchain).  Mounts: /work (repo), /clib4 (clib4 checkout).
+# Runs in the javaos4-build container (has /opt/jdk8, the DejaVu fonts, and lha).
+# Needs only the repo mounted at /work, with build/ already populated by the
+# build scripts (it gathers their outputs -- it does not compile anything).
 # Produces:
 #   /work/build/release/Java/        -- the install tree (-> assign Java:)
 #   /work/build/JavaOS4-<ver>.lha    -- the release archive
