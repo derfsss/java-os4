@@ -57,6 +57,18 @@ def makeDirs(path):
 
 
 ##############################################
+# Give the install drawer a Workbench icon, so it appears on the desktop.
+# The icon is a sibling file "<drawer>.info" in the parent drawer (the
+# standard AmigaOS way to icon a drawer).  Don't clobber an existing icon.
+def addDrawerIcon(dest):
+    if dest == "" or dest[-1:] == ":":
+        return
+    icon = dest + ".info"
+    if not pathExists(icon):
+        amiga.system('Copy >NIL: *>NIL: "content/drawer.info" "' + icon + '"')
+
+
+##############################################
 # Add a permanent JAVA: assign for the chosen drawer.
 #
 # Assigns live for this session, then rewrites S:User-Startup so the assign
@@ -118,7 +130,9 @@ def installEntryHandler(page):
 def installExitHandler(page, direction):
     if (direction != 1):
         return True
-    addJavaAssign(GetString(destinationPage, "destination"))
+    dest = GetString(destinationPage, "destination")
+    addDrawerIcon(dest)
+    addJavaAssign(dest)
     return True
 
 

@@ -104,6 +104,9 @@ sed -e "s/@VERSION@/$VER/g" -e "s/@DATE@/$DATE/g" \
 cp "$SRC/JavaOS4InstallerLocale.py" "$R/"
 cp "$SRC/install.py.info"           "$R/install.py.info"
 cp "$SRC/drawer.info"               "$OUT/Java-OS4.info"
+# drawer icon the installer copies to "<dest>.info" so the install drawer
+# gets a Workbench icon.
+cp "$SRC/drawer.info"               "$R/content/drawer.info"
 
 # --- archive (the drawer + its icon) --------------------------------------
 rm -f "$B/JavaOS4-$VER.lha"        # lha 'a' appends; start clean
