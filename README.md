@@ -1,0 +1,163 @@
+# Java-OS4
+
+**A Java 8 runtime for AmigaOS 4 (PowerPC) — JamVM 2.0 + the OpenJDK 8 class
+library, with a native AWT/Swing toolkit so Java GUIs run in Workbench windows.**
+
+![Swing app running on AmigaOS 4](docs/m4-swingapp.png)
+
+Java-OS4 brings a real, modern-enough Java to 32-bit big-endian PowerPC
+AmigaOS 4: it runs ordinary Java 8 `.jar` files — collections, streams and
+lambdas, NIO, reflection, serialization — and renders Swing user interfaces
+through Intuition and `graphics.library`. It is built by **reviving and
+extending the [JAmiga](#acknowledgements) prior art** rather than starting from
+scratch.
+
+---
+
+## Status
+
+| Phase | Scope | State |
+|------:|-------|-------|
+| 0 | Vendor sources + cross-build environment | ✅ Done |
+| 1 | JamVM engine bring-up (Hello World) | ✅ Done |
+| 2 | OpenJDK 8 class library integration (`java -version`, headless) | ✅ Done |
+| 3 | Headless conformance — io/nio/util/text/zip/reflection, threads + GC | ✅ Done (48/48 tests) |
+| 4 | AWT/Swing GUI — Intuition windows, Java2D, real input, dialogs | ✅ Done |
+| 5 | Packaging, polish, performance | 🚧 In progress (first release: **0.5.0**) |
+
+The current release runs headless Java 8 programs and Swing applications
+(windows, widgets, mouse, keyboard, resize, modal dialogs) in Workbench
+windows. See [`docs/`](docs/) for screenshots of each milestone.
+
+## Features
+
+- **Engine:** JamVM 2.0 — an inline-threaded / stack-caching interpreter,
+  retargeted to AmigaOS 4 PowerPC.
+- **Class library:** the full OpenJDK 8 runtime (`rt.jar` and friends), so real
+  Java 8 application compatibility — not a subset.
+- **C runtime:** [clib4](#acknowledgements) (pthreads, `mmap`, `dlopen`).
+- **GUI:** a [Caciocavallo](https://en.wikipedia.org/wiki/Caciocavallo)-style
+  AWT toolkit (`sun.awt.amiga`) — only top-level windows get native peers
+  (Intuition windows backed by an ARGB framebuffer blitted with
+  `graphics.library`); every widget inside is a Swing lightweight painted by
+  Java2D. Fonts via FreeType.
+- **Zero-flag GUI launch:** `java -cp app.jar Main` starts a Swing app with no
+  special options — the Amiga toolkit is the platform default.
+
+## Quick start
+
+A packaged release is an `.lha` containing a self-contained `Java/` drawer.
+
+1. Unpack it anywhere on your AmigaOS 4 machine.
+2. From the drawer, run the installer (it adds the `Java:` assign):
+
+   ```
+   Execute Install
+   ```
+
+   Add the printed `Assign Java: <path>` line to `S:User-Startup` to make it
+   permanent.
+3. Run programs:
+
+   ```
+   java -version
+   java -cp myapp.jar Main
+   ```
+
+   Swing/AWT applications need no extra flags. Application classpath entries are
+   resolved from the `Java:` drawer; reference jars elsewhere by absolute path.
+
+> `javac` is not included — compile on a host JDK 8 and copy the `.jar` over.
+
+## Building from source
+
+The toolchain runs in a Docker image — the AmigaOS 4 PowerPC cross compiler plus
+a host JDK 8. Build the image once, then run the build scripts inside it:
+
+```sh
+# Build the build image (needs the amigaos4-gcc11 cross-toolchain base image).
+docker build -t javaos4-build:latest -f tools/Dockerfile .
+
+# Build the VM (libjvm.so + launcher), then the natives/toolkit, then package:
+docker run --rm -v "$PWD:/work" -v "$CLIB4:/clib4" javaos4-build:latest \
+    sh /work/tools/build-jamvm-openjdk.sh
+docker run --rm -v "$PWD:/work" -v "$CLIB4:/clib4" javaos4-build:latest \
+    sh /work/tools/package.sh               # -> build/JavaOS4-<ver>.lha
+```
+
+(`$CLIB4` is a checkout of clib4.)
+
+Full instructions, the build-script order, and how to run on QEMU or hardware
+are in **[docs/BUILDING.md](docs/BUILDING.md)**.
+
+## How it works
+
+```
+        Java apps (.class/.jar)  +  Swing
+                          |
+        OpenJDK 8 class library (rt.jar) + native libs
+                          |
+   AWT toolkit: sun.awt.amiga peers -> Intuition + graphics.library V52+
+                          |
+        JamVM 2.0  (libjvm.so: interpreter + GC + JNI)
+                          |
+   os/amiga glue: pthreads, dll loading, exception proxy, callNative
+                          |
+        clib4  on  AmigaOS 4 exec/dos/intuition/graphics  (PPC32 BE)
+```
+
+Key engineering notes (cooperative GC safepoints, the Amiga path model, native
+symbol resolution via clib4's shared-library model, the AWT peer design) are
+documented in [`docs/revival-notes.md`](docs/revival-notes.md) and the
+conventions file [`CLAUDE.md`](CLAUDE.md).
+
+## Repository layout
+
+```
+src/amigaawt/     the sun.awt.amiga AWT toolkit (Java peers + JNI)
+src/niopatch/     NIO.2 provider patch for the Amiga path model
+src/fontconfig/   minimal fontconfig.properties for the font pipeline
+src/tools/        small native helpers (e.g. an input injector for GUI tests)
+tests/            self-verifying conformance + GUI test programs
+tools/            Docker image + build/package scripts
+docs/             notes, screenshots, and the JamVM vendor patch
+```
+
+The upstream JamVM / OpenJDK trees are not committed here; the AmigaOS 4 changes
+to JamVM are carried as a patch at
+[`docs/jamvm-amiga-openjdk.patch`](docs/jamvm-amiga-openjdk.patch).
+
+## Acknowledgements
+
+Java-OS4 stands on a great deal of prior work, with gratitude:
+
+- **[JAmiga](https://github.com/jaokim/jamiga)** by **jaokim** — the
+  Java-on-Amiga effort this project revives and extends. The AmigaOS 4 JamVM
+  port and the IcedTea 8 build harness are the foundation we built on.
+- **[JamVM](https://jamvm.sourceforge.net/)** by **Robert Lougher** — the
+  compact, fast Java virtual machine at the core. (GPLv2)
+- **[OpenJDK](https://openjdk.org/)** and **[IcedTea](https://icedtea.classpath.org/)**
+  — the Java 8 class library and build tooling. (GPLv2 with Classpath Exception)
+  The class-library bytecode used at runtime comes from
+  **[Eclipse Temurin](https://adoptium.net/) 8**.
+- **[clib4](https://github.com/afxgroup/clib4)** — the modern AmigaOS 4 C
+  runtime (pthreads, `mmap`, `dlopen`) this build targets.
+- **[GNU Classpath](https://www.gnu.org/software/classpath/)** — used as the
+  engine bring-up stepping stone in Phase 1. (GPLv2 with Classpath Exception)
+- **AmigaOS 4** and its SDK — `intuition.library`, `graphics.library` V52+,
+  `keymap.library`, and the PowerPC toolchain.
+- The **OpenJDK Caciocavallo** project, whose peer-toolkit design informs the
+  `sun.awt.amiga` approach.
+
+## License
+
+Java-OS4 is distributed under the **GNU General Public License, version 2** —
+see [LICENSE](LICENSE). This matches JamVM (GPLv2); the OpenJDK-derived parts
+carry the GPLv2 **Classpath Exception**. Original source in this repository
+(`src/`, `tools/`, `tests/`) is GPLv2-compatible; the AWT toolkit and other
+class-library-adjacent code additionally grant the Classpath Exception, as noted
+in their file headers.
+
+When redistributing a built release you are combining GPLv2 (JamVM) and
+GPLv2-with-Classpath-Exception (OpenJDK) components; the result is governed by
+the GPLv2.
