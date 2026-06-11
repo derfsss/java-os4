@@ -1,7 +1,15 @@
 # Java-OS4
 
+![status: beta](https://img.shields.io/badge/status-beta-orange)
+![version: 0.5.0](https://img.shields.io/badge/version-0.5.0-blue)
+![license: GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-green)
+
 **A Java 8 runtime for AmigaOS 4 (PowerPC) — JamVM 2.0 + the OpenJDK 8 class
 library, with a native AWT/Swing toolkit so Java GUIs run in Workbench windows.**
+
+> **Beta.** Java-OS4 runs real headless and Swing applications, but it is still
+> under active development — expect rough edges, gaps, and changes between
+> releases. Bug reports and feedback are welcome.
 
 ![Swing app running on AmigaOS 4](docs/m4-swingapp.png)
 
