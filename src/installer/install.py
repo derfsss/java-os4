@@ -22,6 +22,29 @@ defaultDest = "SYS:Java"
 
 
 ##############################################
+# Create a drawer (and any missing parents).  The Installation Utility does
+# not create a non-existent alternatepath, so we make it ourselves.  MakeDir
+# on an existing drawer fails harmlessly (output discarded).
+def makeDirs(path):
+    if path == "":
+        return
+    colon = path.find(":")
+    if colon < 0:
+        base = ""
+        rest = path
+    else:
+        base = path[:colon + 1]     # e.g. "Work:"
+        rest = path[colon + 1:]     # e.g. "Apps/Java"
+    cur = base
+    for part in rest.split("/"):
+        if part == "":
+            continue
+        cur = cur + part
+        amiga.system('MakeDir >NIL: *>NIL: "' + cur + '"')
+        cur = cur + "/"
+
+
+##############################################
 # Add a permanent JAVA: assign for the chosen drawer.
 #
 # Assigns live for this session, then rewrites S:User-Startup so the assign
@@ -69,11 +92,14 @@ SetString(destinationPage, "destination", defaultDest)
 
 
 def installEntryHandler(page):
-    # Copy the runtime into the chosen drawer.
+    dest = GetString(destinationPage, "destination")
+    # Create the drawer first -- the Installation Utility will not create a
+    # missing alternatepath.
+    makeDirs(dest)
     AddPackage(FILEPACKAGE,
         name = "Java-OS4",
         files = ["content/Java/"],
-        alternatepath = GetString(destinationPage, "destination"))
+        alternatepath = dest)
     return True
 
 
