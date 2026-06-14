@@ -870,7 +870,7 @@ index 0000000..c15dc04
 + * link of JAmiga JamVM that are absent from the 2016 Amiga port / the current
 + * SDK.  Keep these together so they are easy to find and remove/replace as the
 + * real implementations land (clib4 migration, JNI native loading, etc.).
-+ * See docs/revival-notes.md.
++ * See the project build notes.
 + */
 +#include <stdint.h>
 +

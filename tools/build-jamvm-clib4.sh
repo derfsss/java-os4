@@ -82,7 +82,7 @@ mkdir -p "$DEST"
 # uses the dynamic linker and shares ONE clib4 (libc.so) with the dlopen'd .so files,
 # then ship clib4's sobjs (libc.so/libm.so/libpthread.so/librt.so) with the app and
 # rpath the .so to them (do NOT overwrite the system SOBJS:, which holds newlib).
-# See docs/revival-notes.md "native symbol resolution".
+# (native symbol resolution via clib4's shared-library model.)
 # -use-dynld: use clib4's dynamic linker so jamvm shares ONE clib4 (libc.so) with
 #   the dlopen'd GNU Classpath native .so files (lets them resolve malloc/IExec/...).
 # -athread=native: thread model required by the dynamic-linker startup (per clib4's

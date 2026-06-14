@@ -109,10 +109,10 @@ are in **[docs/BUILDING.md](docs/BUILDING.md)**.
         clib4  on  AmigaOS 4 exec/dos/intuition/graphics  (PPC32 BE)
 ```
 
-Key engineering notes (cooperative GC safepoints, the Amiga path model, native
-symbol resolution via clib4's shared-library model, the AWT peer design) are
-documented in [`docs/revival-notes.md`](docs/revival-notes.md) and the
-conventions file [`CLAUDE.md`](CLAUDE.md).
+The key engineering work (cooperative GC safepoints, the Amiga path model, native
+symbol resolution via clib4's shared-library model, the AWT peer design) lives in
+the `src/` tree; build and run instructions are in
+[`docs/BUILDING.md`](docs/BUILDING.md).
 
 ## Repository layout
 

@@ -24,3 +24,7 @@
 # Python bytecode
 __pycache__/
 *.pyc
+
+# AI-assistant / internal working docs
+CLAUDE.md
+/docs/revival-notes.md
