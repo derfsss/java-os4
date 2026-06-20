@@ -20,7 +20,7 @@ public class ReflectionTest {
     static final String CLS = "ReflectionTest";
     static int P, F;
 
-    static void ck(String n, boolean ok){ if(ok){P++; System.out.println("[PASS] "+n);} else {F++; System.out.println("[FAIL] "+n);} }
+    static void ck(String n, boolean ok){ if(ok){P++; System.out.println("[PASS] "+n);} else {F++; System.out.println("[FAIL] "+n);} System.out.flush(); }
     static void ck(String n, Object got, Object exp){ ck(n+" {got="+got+" exp="+exp+"}", java.util.Objects.equals(got, exp)); }
 
     // ---- Test fixtures ----

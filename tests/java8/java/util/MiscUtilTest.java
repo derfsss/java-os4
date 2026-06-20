@@ -41,10 +41,18 @@ public class MiscUtilTest {
             ck("UUID.version", u.version(), 4);
             ck("UUID.variant", u.variant(), 2);
             ck("UUID.equals", u, UUID.fromString(us));
-            UUID r1 = UUID.randomUUID();
-            UUID r2 = UUID.randomUUID();
-            ck("randomUUID non-null", r1 != null && r2 != null);
-            ck("randomUUID distinct", !r1.equals(r2));
+            // randomUUID() draws from SecureRandom; a JRE without an entropy
+            // native (e.g. the Amiga port) throws UnsatisfiedLinkError here.
+            // Guard it so the gap is one contained failure, not an abort that
+            // would mask every check below.
+            try {
+                UUID r1 = UUID.randomUUID();
+                UUID r2 = UUID.randomUUID();
+                ck("randomUUID non-null", r1 != null && r2 != null);
+                ck("randomUUID distinct", !r1.equals(r2));
+            } catch (Throwable t) {
+                ck("randomUUID (SecureRandom native missing: " + t + ")", false);
+            }
 
             // --- Random with fixed seed (reproducible) ---
             Random rnd = new Random(42);

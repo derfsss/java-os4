@@ -58,7 +58,11 @@ public class TextTest {
 
             NumberFormat cf = NumberFormat.getCurrencyInstance(US);
             ck("nf currency", cf.format(1234.5), "$1,234.50");
-            ck("nf currency negative", cf.format(-7.0), "-$7.00");
+            // US negative-currency form is locale-data-version dependent:
+            // "-$7.00" (modern CLDR) vs "($7.00)" (legacy COMPAT, e.g. JRE 8).
+            String negCur = cf.format(-7.0);
+            ck("nf currency negative {got=" + negCur + "}",
+               negCur.equals("-$7.00") || negCur.equals("($7.00)"));
 
             NumberFormat pf = NumberFormat.getPercentInstance(US);
             ck("nf percent", pf.format(0.25), "25%");
