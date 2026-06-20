@@ -20,7 +20,7 @@ echo "amigatoolkit.zip OK ($(wc -c < /work/build/amigatoolkit.zip) bytes)"
 "$JDK8/bin/javac" -source 8 -target 8 -encoding UTF-8 \
     -bootclasspath "$RT" \
     -d "$OUT/testclasses" \
-    /work/tests/SwingTest.java /work/tests/SwingType.java /work/tests/SwingResize.java /work/tests/SwingApp.java /work/tests/SwingDialog.java /work/tests/SwingModal.java
+    /work/tests/gui/SwingTest.java /work/tests/gui/SwingType.java /work/tests/gui/SwingResize.java /work/tests/gui/SwingApp.java /work/tests/gui/SwingDialog.java /work/tests/gui/SwingModal.java
 
 (cd "$OUT/testclasses" && "$JDK8/bin/jar" cf /work/build/swingtest.zip .)
 echo "swingtest.zip OK ($(wc -c < /work/build/swingtest.zip) bytes)"
