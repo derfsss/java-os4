@@ -13,17 +13,18 @@
 #   - Output is build/jamvm-openjdk (keeps the working gnuclasspath build/jamvm).
 # Everything else (clib4 overlay, -use-dynld, rpath=SYS:Test, libs) is identical.
 #
-#   docker run --rm -v "<proj>:/work" -v "<clib4>:/clib4" -w /work \
+#   docker run --rm -v "<proj>:/work" -w /work \
 #       javaos4-build:latest sh /work/tools/build-jamvm-openjdk.sh
+# (clib4 is the in-repo clib4/ submodule, built first by tools/build-clib4.sh.)
 set -e
 
 # --- overlay local clib4 over the SDK clib4 --------------------------------
 SDKCLIB4=/opt/ppc-amigaos/ppc-amigaos/SDK/clib4
-if [ -d /clib4/build/lib ]; then
-    cp -f /clib4/build/lib/*.a "$SDKCLIB4/lib/" 2>/dev/null || true
-    cp -f /clib4/build/lib/*.o "$SDKCLIB4/lib/" 2>/dev/null || true
-    cp -rf /clib4/library/include/* "$SDKCLIB4/include/" 2>/dev/null || true
-    echo "=== overlaid local clib4 (build/lib + library/include) ==="
+if [ -d /work/clib4/build/lib ]; then
+    cp -f /work/clib4/build/lib/*.a "$SDKCLIB4/lib/" 2>/dev/null || true
+    cp -f /work/clib4/build/lib/*.o "$SDKCLIB4/lib/" 2>/dev/null || true
+    cp -rf /work/clib4/library/include/* "$SDKCLIB4/include/" 2>/dev/null || true
+    echo "=== overlaid in-repo clib4 submodule (clib4/build/lib + library/include) ==="
 fi
 
 cd /work/vendor/jamvm/src

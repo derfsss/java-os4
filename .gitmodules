@@ -1,0 +1,4 @@
+[submodule "clib4"]
+	path = clib4
+	url = https://github.com/AmigaLabs/clib4.git
+	branch = development

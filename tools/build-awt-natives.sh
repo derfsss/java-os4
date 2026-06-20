@@ -11,14 +11,15 @@
 #     -Djava.awt.graphicsenv=sun.awt.X11GraphicsEnvironment \
 #     -Dawt.toolkit=sun.awt.HToolkit -cp awttest.zip AwtTest
 #
-#   docker run --rm -v "<proj>:/work" -v "<clib4>:/clib4" -w /work \
+#   docker run --rm -v "<proj>:/work" -w /work \
 #       javaos4-build:latest sh /work/tools/build-awt-natives.sh
+# (clib4 is the in-repo clib4/ submodule, built first by tools/build-clib4.sh.)
 set -e
 
 SDKCLIB4=/opt/ppc-amigaos/ppc-amigaos/SDK/clib4
-if [ -d /clib4/build/lib ]; then
-    cp -f /clib4/build/lib/*.a /clib4/build/lib/*.o "$SDKCLIB4/lib/" 2>/dev/null || true
-    cp -rf /clib4/library/include/* "$SDKCLIB4/include/" 2>/dev/null || true
+if [ -d /work/clib4/build/lib ]; then
+    cp -f /work/clib4/build/lib/*.a /work/clib4/build/lib/*.o "$SDKCLIB4/lib/" 2>/dev/null || true
+    cp -rf /work/clib4/library/include/* "$SDKCLIB4/include/" 2>/dev/null || true
 fi
 
 J=/work/build/openjdk8/jdk-3334efeacd83

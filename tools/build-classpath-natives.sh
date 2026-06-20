@@ -3,14 +3,14 @@
 # (Classpath's libtool only emits .a on amigaos, which dlopen can't load, so we
 # compile/link .so directly.) Requires the tree already cross-configured for
 # host=powerpc-unknown-amigaos so include/config.h is the big-endian AmigaOS one.
-# Run inside javaos4-build with /work=project, /clib4=clib4 checkout.
+# Run inside javaos4-build with /work=project (clib4 is the in-repo clib4/ submodule).
 #
 # Builds the core set needed for headless Hello World: javalang, javalangreflect,
 # javaio, javanio, javautil. Skips peers, networking (cpnet gethostbyname_r),
 # and Linux/BSD-only nio (epoll/kqueue) and iconv.
 SDKCLIB4=/opt/ppc-amigaos/ppc-amigaos/SDK/clib4
-cp -f /clib4/build/lib/*.a /clib4/build/lib/*.o "$SDKCLIB4/lib/" 2>/dev/null || true
-cp -rf /clib4/library/include/* "$SDKCLIB4/include/" 2>/dev/null || true
+cp -f /work/clib4/build/lib/*.a /work/clib4/build/lib/*.o "$SDKCLIB4/lib/" 2>/dev/null || true
+cp -rf /work/clib4/library/include/* "$SDKCLIB4/include/" 2>/dev/null || true
 
 CP=/work/vendor/fallback/classpath
 J=$CP/native/jni

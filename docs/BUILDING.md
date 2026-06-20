@@ -10,8 +10,10 @@ run the result.
 - **The base cross-toolchain image** `amigaos4-gcc11:latest` — the
   `ppc-amigaos-gcc` 11.5.0 toolchain with the AmigaOS 4 SDK and clib4. The build
   image (`tools/Dockerfile`) derives from it and adds a host JDK 8 + `ecj`.
-- **A clib4 checkout** (the C runtime), mounted into the container at `/clib4`.
-  The runtime must match the version you deploy to the target.
+- **The clib4 C runtime** — vendored as the **`clib4/` git submodule**
+  (`AmigaLabs/clib4`, `development` branch). Check it out with
+  `git submodule update --init` (or clone the repo with `--recursive`). The build
+  compiles clib4 from this submodule, so the runtime always matches the build.
 
 Build the image once (rebuild when `tools/Dockerfile` changes):
 
@@ -22,8 +24,7 @@ docker build -t javaos4-build:latest -f tools/Dockerfile .
 > **Windows:** run Docker from PowerShell (call `docker.exe` directly). The
 > Git-Bash/MSYS layer rewrites the `-v`/`-w` paths and breaks the mounts.
 
-In the commands below, `$CLIB4` is the path to your clib4 checkout, and the
-working directory is the repository root.
+In the commands below the working directory is the repository root.
 
 ## Build steps
 
@@ -31,10 +32,11 @@ The `Makefile` drives the cross build (each target runs the matching `tools/`
 script inside the image and writes to `build/`):
 
 ```sh
+git submodule update --init       # check out the clib4/ submodule, once
 make image                        # build the build image, once
-make build   CLIB4=/path/to/clib4 # VM + OpenJDK/AWT natives + toolkit
+make build                        # clib4 + VM + OpenJDK/AWT natives + toolkit
 make dist                         # gather build/ -> build/release/Java/ + .lha
-make release CLIB4=/path/to/clib4 # build then dist, in one step
+make release                      # build then dist, in one step
 ```
 
 `make build` expands to, in order: `build-jamvm-openjdk.sh` (the VM:

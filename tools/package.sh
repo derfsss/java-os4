@@ -63,18 +63,22 @@ for so in libjava libverify libzip libnio libnet \
 done
 
 # --- runtime: CRT / support shared objects --------------------------------
-cp "$B/sobjs/"libc.so "$B/sobjs/"libpthread.so "$B/sobjs/"libm.so \
-   "$B/sobjs/"librt.so "$B/sobjs/"libz.so.1 "$B/sobjs/"libgcc.so "$RT/"
+# clib4's .so front-ends come straight from the in-repo clib4/ submodule build,
+# in lockstep with clib4.library below.  libz (zlib) and libgcc (gcc runtime)
+# are third-party / toolchain sobjs, NOT clib4 -- they stay in build/sobjs.
+cp /work/clib4/build/lib/libc.so /work/clib4/build/lib/libpthread.so \
+   /work/clib4/build/lib/libm.so /work/clib4/build/lib/librt.so "$RT/"
+cp "$B/sobjs/"libz.so.1 "$B/sobjs/"libgcc.so "$RT/"
 
 # --- runtime: clib4.library (the C runtime the VM + .so stubs call into) ---
 # The bundled .so stubs (libc.so, ...) are clib4.library front-ends; the real
 # C runtime lives in clib4.library, which must be present in LIBS: at runtime.
 # Ship it so the installer can put it there on a machine that has no clib4 --
 # the .so stubs alone are not enough (this was the missing-requirement that
-# blocked installs in 0.5.0).  This is the exact build the VM was validated
-# against (incl. the AltiVec vec_strcpy page-overread fix); keep it in lockstep
-# with build/sobjs/.  clib4 2.1+.
-cp /work/build/clib4.library "$RT/"
+# blocked installs in 0.5.0).  Built from the clib4/ submodule (AmigaLabs/clib4
+# `development`, incl. the AltiVec vec_strcpy page-overread fix #438), in
+# lockstep with the .so front-ends above.  clib4 2.1+.
+cp /work/clib4/build/clib4.library "$RT/"
 
 # --- runtime: class library + toolkit -------------------------------------
 cp "$B/jars/"rt.jar "$B/jars/"charsets.jar "$B/jars/"jce.jar \

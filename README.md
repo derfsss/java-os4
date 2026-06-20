@@ -88,16 +88,18 @@ The toolchain runs in a Docker image — the AmigaOS 4 PowerPC cross compiler pl
 a host JDK 8 — driven by the `Makefile`:
 
 ```sh
-make image                       # build the cross-build image (needs the
-                                 #   amigaos4-gcc11 base image), once
-make build  CLIB4=/path/to/clib4 # VM + native libraries + AWT toolkit
-make dist                        # assemble the install tree + the .lha release
-                                 #   -> build/JavaOS4-<ver>.lha
+git submodule update --init     # check out the clib4/ submodule (or clone --recursive)
+make image                      # build the cross-build image (needs the
+                                #   amigaos4-gcc11 base image), once
+make build                      # clib4 + VM + native libraries + AWT toolkit
+make dist                       # assemble the install tree + the .lha release
+                                #   -> build/JavaOS4-<ver>.lha
 ```
 
-`make release CLIB4=...` does `build` then `dist` in one step; `make help`
-lists every target. (`CLIB4` is a checkout of the clib4 C runtime, needed by the
-build targets but not by `dist`.)
+`make release` does `build` then `dist` in one step; `make help` lists every
+target. The clib4 C runtime is vendored as the **`clib4/` git submodule**
+(`AmigaLabs/clib4`, `development` branch) and built from source by `make clib4`
+(run automatically by `build`) — no external path needed.
 
 Full instructions, the build-script order, and how to run on QEMU or hardware
 are in **[docs/BUILDING.md](docs/BUILDING.md)**.

@@ -7,21 +7,21 @@
 # shim headers (shelved as *.jamiga-shim-bak) are NOT built. os/amiga/os.c is the
 # clib4/dlopen variant; initialisePlatform() lives in os/amiga/powerpc/init.c.
 #
-# Uses the locally-built clib4 (newer than the SDK's): the Projects/clib4 checkout
-# is mounted at /clib4 and overlaid onto the container's SDK clib4 so -mcrt=clib4
-# picks it up.
+# Uses the in-repo clib4/ submodule (built by tools/build-clib4.sh, newer than
+# the SDK's): clib4/build/lib + library/include are overlaid onto the container's
+# SDK clib4 so -mcrt=clib4 picks it up.
 #
-#   docker run --rm -v "<proj>:/work" -v "<clib4>:/clib4" -w /work \
+#   docker run --rm -v "<proj>:/work" -w /work \
 #       javaos4-build:latest sh /work/tools/build-jamvm-clib4.sh
 set -e
 
 # --- overlay local clib4 over the SDK clib4 --------------------------------
 SDKCLIB4=/opt/ppc-amigaos/ppc-amigaos/SDK/clib4
-if [ -d /clib4/build/lib ]; then
-    cp -f /clib4/build/lib/*.a "$SDKCLIB4/lib/" 2>/dev/null || true
-    cp -f /clib4/build/lib/*.o "$SDKCLIB4/lib/" 2>/dev/null || true
-    cp -rf /clib4/library/include/* "$SDKCLIB4/include/" 2>/dev/null || true
-    echo "=== overlaid local clib4 (build/lib + library/include) ==="
+if [ -d /work/clib4/build/lib ]; then
+    cp -f /work/clib4/build/lib/*.a "$SDKCLIB4/lib/" 2>/dev/null || true
+    cp -f /work/clib4/build/lib/*.o "$SDKCLIB4/lib/" 2>/dev/null || true
+    cp -rf /work/clib4/library/include/* "$SDKCLIB4/include/" 2>/dev/null || true
+    echo "=== overlaid in-repo clib4 submodule (clib4/build/lib + library/include) ==="
 fi
 
 cd /work/vendor/jamvm/src
