@@ -20,6 +20,14 @@ loc = JavaOS4InstallerLocale()
 # Default install drawer (created if it does not exist).
 defaultDest = "SYS:Java"
 
+# The chosen install drawer, captured at the install step (right after the user
+# leaves the destination page) so the post-copy steps -- icon, JAVA: assign,
+# protection bits, clib4 -- use the SAME path the files were copied to.  Reading
+# the destination field again from the INSTALL page's exit handler returns an
+# empty/stale value, which is why protect/assign ran against the wrong path
+# ("object not found") even though the copy itself succeeded.
+chosenDest = [defaultDest]
+
 
 ##############################################
 # Does a file/drawer exist?
@@ -146,6 +154,7 @@ SetString(destinationPage, "destination", defaultDest)
 
 def installEntryHandler(page):
     dest = GetString(destinationPage, "destination")
+    chosenDest[0] = dest        # stash the chosen path while it is still valid
     # Create the drawer first -- the Installation Utility will not create a
     # missing alternatepath.
     makeDirs(dest)
@@ -159,7 +168,7 @@ def installEntryHandler(page):
 def installExitHandler(page, direction):
     if (direction != 1):
         return True
-    dest = GetString(destinationPage, "destination")
+    dest = chosenDest[0]
     addDrawerIcon(dest)
     addJavaAssign(dest)
     protectRuntime(dest)
