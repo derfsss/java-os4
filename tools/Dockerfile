@@ -1,13 +1,15 @@
 # Java-OS4 build image.
 #
-# Base provides the AmigaOS 4 cross toolchain (ppc-amigaos-gcc 11.5.0), the SDK,
-# clib4, and autotools.  It does NOT ship a host Java compiler, which we need to
-# compile GNU Classpath's Java sources during the cross build.  This derived
-# image adds a host JDK + ecj (Eclipse batch compiler) and a few build helpers.
+# Base: walkero/amigagccondocker:os4-gcc11 -- the public AmigaOS 4 cross-toolchain
+# image (ppc-amigaos-gcc 11.5.0 + SDK + clib4 + autotools), on Docker Hub:
+#   https://hub.docker.com/r/walkero/amigagccondocker
+# It does NOT ship a host Java compiler, which we need to compile GNU Classpath's
+# Java sources during the cross build, so this derived image adds a host JDK +
+# ecj (Eclipse batch compiler) and a few build helpers.
 #
 # Build once (from project root):  make image   (or: docker build -t javaos4-build:latest -f tools/Dockerfile .)
 # Rebuild whenever this file changes.
-FROM amigaos4-gcc11:latest
+FROM walkero/amigagccondocker:os4-gcc11
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         default-jdk-headless \
@@ -42,8 +44,9 @@ ENV BOOT_JDK=/opt/jdk8
 # (AmigaLabs).  The amd64 .deb ships the cross-SDK at /usr/ppc-amigaos/SDK/clib4;
 # relocate it over the toolchain SDK at /opt/ppc-amigaos/ppc-amigaos/SDK/clib4 so
 # -mcrt=clib4 picks up v2.1 (libs/headers/sobjs incl. the CRT startup objects).
-# The local Projects/clib4 overlay (mounted /clib4, also v2.1) still shadows the
-# .a/.o + headers at build time; this provides the v2.1 .so for -use-dynld linking.
+# The in-repo clib4/ submodule build (clib4/build) is overlaid on top of this by
+# the build scripts at build time; this baked-in v2.1 SDK clib4 is the baseline
+# for -mcrt=clib4 (and the .so for -use-dynld linking) before the submodule build.
 RUN curl -fsSL -o /tmp/clib4.deb \
       "https://github.com/AmigaLabs/clib4/releases/download/v2.1/clib4-v2.1_amd64.deb" \
     && dpkg-deb -x /tmp/clib4.deb /tmp/clib4dir \

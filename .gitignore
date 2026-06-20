@@ -27,4 +27,14 @@ __pycache__/
 
 # AI-assistant / internal working docs
 CLAUDE.md
+
+# Internal plans + working notes (planning / scratch docs -- never pushed)
+/PLAN.md
+PLAN*.md
+/plans/
+*.plan.md
+plan-*.md
 /docs/revival-notes.md
+
+# The OpenJDK 17 (Zero) spike lives on the jdk17 branch, not on main.
+/jdk17/

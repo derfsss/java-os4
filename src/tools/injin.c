@@ -1,9 +1,9 @@
 /*
  * injin -- inject input events through input.device (AmigaOS 4).
  *
- * Drives REAL input into the active screen/window for automated GUI testing
- * (the qemu QMP socket is held by the fleet MCP, so host-side input
- * injection is unavailable; this runs guest-side instead).
+ * Drives REAL input into the active screen/window for automated GUI testing,
+ * guest-side -- for setups where host-side / emulator input injection is not
+ * available.
  *
  * Usage (commands are processed left to right):
  *   injin POS <x> <y>          move the pointer to absolute screen x,y

@@ -6,14 +6,22 @@ run the result.
 
 ## Prerequisites
 
-- **Docker.**
-- **The base cross-toolchain image** `amigaos4-gcc11:latest` — the
-  `ppc-amigaos-gcc` 11.5.0 toolchain with the AmigaOS 4 SDK and clib4. The build
-  image (`tools/Dockerfile`) derives from it and adds a host JDK 8 + `ecj`.
+- **Docker.** The build image (`tools/Dockerfile`) derives from
+  [`walkero/amigagccondocker:os4-gcc11`](https://hub.docker.com/r/walkero/amigagccondocker)
+  — the public AmigaOS 4 cross-toolchain image (`ppc-amigaos-gcc` 11.5.0 + SDK +
+  clib4) — and adds a host JDK 8 + `ecj`. The base is pulled automatically the
+  first time you build the image.
 - **The clib4 C runtime** — vendored as the **`clib4/` git submodule**
   (`AmigaLabs/clib4`, `development` branch). Check it out with
   `git submodule update --init` (or clone the repo with `--recursive`). The build
   compiles clib4 from this submodule, so the runtime always matches the build.
+- **The vendored JamVM + OpenJDK 8 sources** — large public upstream trees,
+  gitignored here (only our changes are tracked, as the patch under `docs/`).
+  Fetch them once with **`make vendor`** (or `sh tools/fetch-vendor.sh`): it clones
+  [`jaokim/jamiga-jamvm`](https://github.com/jaokim/jamiga-jamvm) into
+  `vendor/jamvm` and applies `docs/jamvm-amiga-openjdk.patch`, and clones
+  [`jaokim/jamiga-icedtea8-3.0`](https://github.com/jaokim/jamiga-icedtea8-3.0)
+  into `vendor/icedtea8` (see *Getting the OpenJDK 8 native sources* below).
 
 Build the image once (rebuild when `tools/Dockerfile` changes):
 
@@ -33,7 +41,8 @@ script inside the image and writes to `build/`):
 
 ```sh
 git submodule update --init       # check out the clib4/ submodule, once
-make image                        # build the build image, once
+make vendor                       # fetch JamVM + IcedTea 8 upstream sources, once
+make image                        # build the build image (pulls walkero base), once
 make build                        # clib4 + VM + OpenJDK/AWT natives + toolkit
 make dist                         # gather build/ -> build/release/Java/ + .lha
 make release                      # build then dist, in one step
@@ -51,6 +60,19 @@ hand inside the image if you prefer.
 The class-library jars (`rt.jar`, `charsets.jar`, …) come from the Temurin 8 JDK
 in the build image; `package.sh` gathers them along with the VM, the native
 libraries, the clib4/support shared objects, the font data, and the launcher.
+
+### Getting the OpenJDK 8 native sources
+
+`make natives` compiles `libjava` / `libawt` / `libfontmanager` / … from the
+OpenJDK 8 C sources, which are not committed here. The IcedTea 8 harness in
+`vendor/icedtea8` (fetched by `make vendor`) downloads and extracts OpenJDK 8u
+for you — build it per [`vendor/icedtea8/README`](../vendor/icedtea8/README) (a
+standard `./configure && make`); it writes the OpenJDK 8u source tree under
+`build/openjdk8/`. The native build scripts expect that tree at
+`build/openjdk8/jdk-<changeset>`, so set `J=` near the top of
+`tools/build-openjdk-natives.sh` and `tools/build-awt-natives.sh` to match the
+directory the harness creates. (`make vm` and `make clib4` do **not** need this
+step — only the OpenJDK native libraries do.)
 
 ## The VM as a shared library
 

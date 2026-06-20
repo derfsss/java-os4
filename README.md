@@ -56,9 +56,15 @@ windows. See [`docs/`](docs/) for screenshots of each milestone.
 
 A packaged release is an `.lha` containing a `Java-OS4` installer drawer.
 
-**Requirement:** `clib4.library` **2.1 or newer** in `LIBS:` — the C runtime the
-VM depends on. The installer copies the bundled copy there if it is missing
-(get the latest from [clib4](https://github.com/afxgroup/clib4) to update it).
+**Requirements:**
+
+- **AmigaOS 4** (PowerPC). Swing/AWT GUIs additionally need **`graphics.library`
+  V52+** and `intuition.library` (standard on current AmigaOS 4); headless
+  programs do not.
+- **`clib4.library` 2.1 or newer** in `LIBS:` — the C runtime the VM depends on.
+  The installer copies the bundled copy there if it is missing (get the latest
+  from [clib4](https://github.com/AmigaLabs/clib4) to update it).
+- The installer runs under **`Sys:Utilities/Installation Utility`** (AmigaOS 4.1).
 
 1. Unpack it anywhere on your AmigaOS 4 machine.
 2. Double-click the **Java-OS4** drawer icon to launch the installer (it runs
@@ -89,17 +95,21 @@ a host JDK 8 — driven by the `Makefile`:
 
 ```sh
 git submodule update --init     # check out the clib4/ submodule (or clone --recursive)
-make image                      # build the cross-build image (needs the
-                                #   amigaos4-gcc11 base image), once
+make vendor                     # fetch the JamVM + IcedTea 8 upstream sources, once
+make image                      # build the cross-build image (pulls the public
+                                #   walkero/amigagccondocker base), once
 make build                      # clib4 + VM + native libraries + AWT toolkit
 make dist                       # assemble the install tree + the .lha release
                                 #   -> build/JavaOS4-<ver>.lha
 ```
 
 `make release` does `build` then `dist` in one step; `make help` lists every
-target. The clib4 C runtime is vendored as the **`clib4/` git submodule**
-(`AmigaLabs/clib4`, `development` branch) and built from source by `make clib4`
-(run automatically by `build`) — no external path needed.
+target. The clib4 C runtime is the in-repo **`clib4/` git submodule**
+(`AmigaLabs/clib4`, `development`), built by `make clib4` automatically. The
+larger JamVM + OpenJDK 8 (IcedTea) upstream trees are public but not committed
+here — `make vendor` fetches them (see
+[docs/BUILDING.md](docs/BUILDING.md) for the full source-acquisition flow). No
+external paths are needed.
 
 Full instructions, the build-script order, and how to run on QEMU or hardware
 are in **[docs/BUILDING.md](docs/BUILDING.md)**.
@@ -154,7 +164,7 @@ Java-OS4 stands on a great deal of prior work, with gratitude:
   — the Java 8 class library and build tooling. (GPLv2 with Classpath Exception)
   The class-library bytecode used at runtime comes from
   **[Eclipse Temurin](https://adoptium.net/) 8**.
-- **[clib4](https://github.com/afxgroup/clib4)** — the modern AmigaOS 4 C
+- **[clib4](https://github.com/AmigaLabs/clib4)** — the modern AmigaOS 4 C
   runtime (pthreads, `mmap`, `dlopen`) this build targets.
 - **[GNU Classpath](https://www.gnu.org/software/classpath/)** — used as the
   engine bring-up stepping stone in Phase 1. (GPLv2 with Classpath Exception)

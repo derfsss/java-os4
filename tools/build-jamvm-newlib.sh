@@ -1,11 +1,11 @@
 #!/bin/sh
 # Baseline newlib build + link of JAmiga JamVM (gnuclasspath classlib).
 # Reproduces the object set from JAmiga's hand Makefiles without their
-# Amiga-only commands (makelink/delete/bumprev). Run INSIDE the
-# amigaos4-gcc11 container with the working dir = vendor/jamvm.
+# Amiga-only commands (makelink/delete/bumprev). Run INSIDE the public
+# walkero/amigagccondocker:os4-gcc11 container with the working dir = vendor/jamvm.
 #
 #   docker run --rm -v "<root>/vendor/jamvm:/work" -w /work \
-#       amigaos4-gcc11:latest sh tools-build/build-jamvm-newlib.sh
+#       walkero/amigagccondocker:os4-gcc11 sh tools-build/build-jamvm-newlib.sh
 #
 # (this file is copied in by build.ps1 / the caller; see Phase 0 notes)
 set -e

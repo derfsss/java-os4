@@ -3,6 +3,7 @@
 # All real work happens in the cross-build Docker image; these targets just
 # invoke the scripts in tools/ inside it.  See docs/BUILDING.md.
 #
+#   make vendor    fetch the vendored JamVM + IcedTea 8 upstream sources (once)
 #   make image     build the cross-build Docker image (once)
 #   make clib4     build the clib4 C runtime from the in-repo clib4/ submodule
 #   make vm        build the VM (libjvm.so + jamvm-openjdk launcher)
@@ -14,9 +15,10 @@
 #   make release   build everything, then dist
 #   make clean-dist  remove build/release and the .lha
 #
-# clib4 is vendored as the in-repo clib4/ git submodule (AmigaLabs/clib4,
-# `development` branch).  A fresh clone needs `git submodule update --init`
-# (the build does this automatically).  No external CLIB4 path is required.
+# First-time setup (see docs/BUILDING.md): `make vendor` fetches the large public
+# upstream sources (jaokim's JamVM + IcedTea 8) that are gitignored here, and the
+# clib4 C runtime is the in-repo clib4/ git submodule (AmigaLabs/clib4,
+# `development`) that `make build` checks out automatically.  No external paths.
 #
 # Windows: run from PowerShell (the Git-Bash MSYS layer mangles docker paths).
 
@@ -32,10 +34,14 @@ LHA     := build/JavaOS4-$(VERSION).lha
 DOCKER = MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker
 RUN    = $(DOCKER) run --rm -v "$(CURDIR):/work" -w /work $(DOCKER_IMAGE) sh
 
-.PHONY: image clib4 vm natives toolkit tests build dist lha release clean-dist help
+.PHONY: vendor image clib4 vm natives toolkit tests build dist lha release clean-dist help
 
 help:
 	@sed -n 's/^#   //p' Makefile
+
+# Fetch the vendored JamVM + IcedTea 8 upstream sources (clone + apply our patch).
+vendor:
+	sh tools/fetch-vendor.sh
 
 image:
 	docker build -t $(DOCKER_IMAGE) -f tools/Dockerfile .

@@ -1,5 +1,5 @@
 /* Minimal clib4 pthread smoke test. Isolates whether clib4 pthread_create works
-   at all in the mcpd launch environment (vs. a JamVM-specific cause). */
+   at all when launched outside a Shell/CLI process (vs. a JamVM-specific cause). */
 #include <pthread.h>
 #include <stdio.h>
 #include <errno.h>

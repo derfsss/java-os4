@@ -2,8 +2,10 @@
 # Included by sub-Makefiles / scripts to avoid duplicating Docker and compiler
 # settings.
 
-# Base image (cross toolchain + SDK + clib4 + autotools, no host Java).
-DOCKER_BASE_IMAGE = amigaos4-gcc11:latest
+# Base image: walkero/amigagccondocker:os4-gcc11 -- the public AmigaOS 4 cross
+# toolchain (SDK + clib4 + autotools, no host Java) on Docker Hub:
+# https://hub.docker.com/r/walkero/amigagccondocker
+DOCKER_BASE_IMAGE = walkero/amigagccondocker:os4-gcc11
 # Derived image (adds host JDK + ecj for GNU Classpath); built from tools/Dockerfile.
 DOCKER_IMAGE      = javaos4-build:latest
 
