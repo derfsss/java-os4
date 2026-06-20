@@ -55,6 +55,9 @@ windows. See [`docs/`](docs/) for screenshots of each milestone.
 ## Quick start
 
 A packaged release is an `.lha` containing a `Java-OS4` installer drawer.
+**Download the latest from the
+[Releases page](https://github.com/derfsss/java-os4/releases)**, or build it from
+source (see [Building from source](#building-from-source) below).
 
 **Requirements:**
 
