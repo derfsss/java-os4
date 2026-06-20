@@ -20,12 +20,13 @@ loc = JavaOS4InstallerLocale()
 # Default install drawer (created if it does not exist).
 defaultDest = "SYS:Java"
 
-# The chosen install drawer, captured at the install step (right after the user
-# leaves the destination page) so the post-copy steps -- icon, JAVA: assign,
-# protection bits, clib4 -- use the SAME path the files were copied to.  Reading
-# the destination field again from the INSTALL page's exit handler returns an
-# empty/stale value, which is why protect/assign ran against the wrong path
-# ("object not found") even though the copy itself succeeded.
+# The chosen install drawer, captured + normalised at the install step and reused
+# by every post-copy step (icon / JAVA: assign / protection bits / clib4) so they
+# all act on the SAME path the files were copied to.  The Installation Utility
+# hands the destination back with a TRAILING SLASH (e.g. "SYS:Java/"), so the old
+# `home + "/java"` built "SYS:Java//java" -- AmigaDOS reads "//" as the parent
+# dir, giving "SYS:java", so Protect failed with "object not found" (the copy and
+# the JAVA: assign happened to tolerate the slash).  rstrip("/") fixes it.
 chosenDest = [defaultDest]
 
 
@@ -153,8 +154,8 @@ SetString(destinationPage, "destination", defaultDest)
 
 
 def installEntryHandler(page):
-    dest = GetString(destinationPage, "destination")
-    chosenDest[0] = dest        # stash the chosen path while it is still valid
+    dest = GetString(destinationPage, "destination").rstrip("/")
+    chosenDest[0] = dest        # normalised chosen path, reused by the exit handler
     # Create the drawer first -- the Installation Utility will not create a
     # missing alternatepath.
     makeDirs(dest)
