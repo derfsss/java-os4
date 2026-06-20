@@ -144,14 +144,42 @@ final class AmigaEventPump implements Runnable {
         java.awt.EventQueue.invokeLater(new Runnable() {
             @Override
             public void run() {
-                java.awt.Component owner =
-                    java.awt.KeyboardFocusManager
-                        .getCurrentKeyboardFocusManager().getFocusOwner();
-                java.awt.Component tgt = owner != null ? owner : p.target;
+                java.awt.Component tgt = keyTarget(p);
                 tgt.dispatchEvent(new KeyEvent(tgt, id, when, mods,
                                                keyCode, keyChar));
             }
         });
+    }
+
+    /* Pick the component a synthesized KeyEvent is dispatched to.
+     *
+     * Normally that is the current focus owner: dispatching to it fires its
+     * KeyListeners and its WHEN_FOCUSED / WHEN_ANCESTOR_OF_FOCUSED_COMPONENT
+     * bindings, and -- because the owner is a JComponent inside the window --
+     * also the window's WHEN_IN_FOCUSED_WINDOW bindings (via
+     * JComponent.processKeyBindingsForAllComponents).
+     *
+     * But when nothing holds focus the owner is null.  That happens for the
+     * very common game idiom of panel.setFocusable(true)+requestFocusInWindow()
+     * issued before the window is the focused window (this peerless toolkit
+     * does not always establish an initial focus owner).  Dispatching to the
+     * bare java.awt.Frame then runs NO key bindings at all -- Frame is not a
+     * JComponent -- so WHEN_IN_FOCUSED_WINDOW actions (how Swing games usually
+     * bind arrow/space) silently never fire, which reads as "keyboard doesn't
+     * work".  Fall back to a JComponent inside the focused window (its
+     * JRootPane) so those window-scoped bindings still resolve. */
+    private static java.awt.Component keyTarget(AmigaWindowPeer p) {
+        java.awt.Component owner = java.awt.KeyboardFocusManager
+            .getCurrentKeyboardFocusManager().getFocusOwner();
+        if (owner != null)
+            return owner;
+        if (p.target instanceof javax.swing.RootPaneContainer) {
+            javax.swing.JRootPane rp =
+                ((javax.swing.RootPaneContainer) p.target).getRootPane();
+            if (rp != null)
+                return rp;
+        }
+        return p.target;
     }
 
     private static int modifiers(int qual) {

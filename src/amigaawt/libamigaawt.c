@@ -24,6 +24,7 @@
 #include <proto/keymap.h>
 
 #include <string.h>
+#include <stdlib.h>   /* atexit */
 
 #include "jni.h"
 
@@ -71,6 +72,67 @@ static int ensure_libs(void) {
 #define EV_DEACTIVATE  10
 #define EV_MOVE        11
 
+/* ---- open-window registry + at-exit safety net -------------------------- *
+ * A Swing JFrame with the default EXIT_ON_CLOSE calls System.exit() WITHOUT
+ * disposing the frame, so AmigaWindowPeer.dispose() -> close0() never runs and
+ * the Intuition window is still open when the VM tears the process down.  On
+ * AmigaOS a leaked open window -- whose IDCMP UserPort is bound to a task that
+ * exit() then frees -- hangs the machine (Intuition keeps trying to deliver
+ * input to a dead task).  amiga_exit() drains the EDT + AWT-pump threads and
+ * then calls clib4 exit(), which runs C atexit() handlers; by the time this
+ * runs no other task is alive to touch these windows, so we stop their IDCMP
+ * (ModifyIDCMP win,0 -- also frees the Intuition-allocated port) and close
+ * them.  This is the safety net for the EXIT_ON_CLOSE path that skips
+ * dispose(); the normal dispose()/close0() path unregisters first. */
+#define MAX_AWT_WINDOWS 64
+static struct Window *g_windows[MAX_AWT_WINDOWS];
+static int g_atexit_registered = 0;
+
+static void awt_atexit_cleanup(void)
+{
+    int i;
+    if (IIntuition == NULL)
+        return;
+    for (i = 0; i < MAX_AWT_WINDOWS; i++) {
+        struct Window *win = g_windows[i];
+        if (win != NULL) {
+            g_windows[i] = NULL;
+            IIntuition->ModifyIDCMP(win, 0);   /* stop delivery, free the port */
+            IIntuition->CloseWindow(win);
+        }
+    }
+}
+
+static void register_window(struct Window *win)
+{
+    int i;
+    if (win == NULL)
+        return;
+    if (!g_atexit_registered) {
+        g_atexit_registered = 1;
+        atexit(awt_atexit_cleanup);
+    }
+    IExec->Forbid();
+    for (i = 0; i < MAX_AWT_WINDOWS; i++)
+        if (g_windows[i] == NULL) {
+            g_windows[i] = win;
+            break;
+        }
+    IExec->Permit();
+}
+
+static void unregister_window(struct Window *win)
+{
+    int i;
+    IExec->Forbid();
+    for (i = 0; i < MAX_AWT_WINDOWS; i++)
+        if (g_windows[i] == win) {
+            g_windows[i] = NULL;
+            break;
+        }
+    IExec->Permit();
+}
+
 static jlong do_open(JNIEnv *env, jint w, jint h, jstring title, int sizable)
 {
     struct Window *win;
@@ -114,6 +176,7 @@ static jlong do_open(JNIEnv *env, jint w, jint h, jstring title, int sizable)
     if (win == NULL && tcopy != NULL)
         IExec->FreeVec(tcopy);
 
+    register_window(win);
     return (jlong)(uintptr_t)win;
 }
 
@@ -227,6 +290,7 @@ static void do_close(jlong handle)
     STRPTR ttl;
     if (win == NULL)
         return;
+    unregister_window(win);
     ttl = win->Title;   /* our AllocVec copy (open or settitle) */
     IIntuition->CloseWindow(win);
     if (ttl != NULL)

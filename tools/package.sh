@@ -66,11 +66,28 @@ done
 cp "$B/sobjs/"libc.so "$B/sobjs/"libpthread.so "$B/sobjs/"libm.so \
    "$B/sobjs/"librt.so "$B/sobjs/"libz.so.1 "$B/sobjs/"libgcc.so "$RT/"
 
+# --- runtime: clib4.library (the C runtime the VM + .so stubs call into) ---
+# The bundled .so stubs (libc.so, ...) are clib4.library front-ends; the real
+# C runtime lives in clib4.library, which must be present in LIBS: at runtime.
+# Ship it so the installer can put it there on a machine that has no clib4 --
+# the .so stubs alone are not enough (this was the missing-requirement that
+# blocked installs in 0.5.0).  This is the exact build the VM was validated
+# against (incl. the AltiVec vec_strcpy page-overread fix); keep it in lockstep
+# with build/sobjs/.  clib4 2.1+.
+cp /work/build/clib4.library "$RT/"
+
 # --- runtime: class library + toolkit -------------------------------------
 cp "$B/jars/"rt.jar "$B/jars/"charsets.jar "$B/jars/"jce.jar \
    "$B/jars/"jsse.jar "$B/jars/"resources.jar "$RT/"
 cp "$N/niopatch.zip"     "$RT/"
 cp "$B/amigatoolkit.zip" "$RT/"
+
+# --- examples + test suite (runnable out of the box) ----------------------
+# 0.5.0 shipped nothing to run but `java -version`; bundle a headless demo, a
+# Swing demo, and the self-verifying VM test suite.
+mkdir -p "$RT/examples"
+cp "$B/examples/"HelloJava.jar "$B/examples/"SwingDemo.jar "$RT/examples/"
+cp "$B/testsuite.zip" "$RT/examples/"
 
 # --- runtime: lib/ resources (read from java.home/lib) --------------------
 cp /work/src/fontconfig/fontconfig.properties "$RT/lib/"
@@ -89,16 +106,27 @@ cat > "$RT/README" <<README
 Java-OS4 $VER -- runtime
 ========================
 
-Installed by the Java-OS4 installer, which assigns JAVA: to this drawer (added
-to S:User-Startup so it survives reboots).  From a Shell:
+A Java 8 runtime for AmigaOS 4: JamVM 2.0 + the OpenJDK 8 class library, with a
+Swing/AWT toolkit so Java GUIs run in Workbench windows.
+
+Requirements
+  clib4.library 2.1 or newer in LIBS: -- the C runtime the VM depends on.  The
+  installer copies the bundled clib4.library there if it is missing.
+
+The installer assigns JAVA: to this drawer (added to S:User-Startup so it
+survives reboots) and copies the 'java' launcher to C: so it runs from any
+Shell.  Try:
 
     java -version
-    java -cp myapp.jar Main
+    java -cp examples/HelloJava.jar HelloJava
+    java -cp examples/SwingDemo.jar  SwingDemo
+    java -cp examples/testsuite.zip  VmSuite
 
 Swing/AWT applications need no extra flags -- the Amiga toolkit is the default.
 App classpath entries resolve from the JAVA: drawer (the launcher CDs there);
 reference jars elsewhere by absolute path.  'javac' is not included -- compile
-on a host JDK 8 and copy the jar over.
+on a host JDK 8 with 'javac --release 8' and copy the jar over.  Bytecode newer
+than Java 8 is rejected up front with UnsupportedClassVersionError.
 
 Licensing: JamVM GPLv2; OpenJDK 8 GPLv2 + Classpath exception.
 README

@@ -105,6 +105,35 @@ def addJavaAssign(home):
 
 
 ##############################################
+# Set the protection bits the .lha + Installation-Utility copy do not carry,
+# and put `java` on the command path.
+#
+#  - `java` is an AmigaDOS script: it needs the 's' (script) bit to run by
+#    name (without it the user must `protect java +s` by hand);
+#  - jamvm-openjdk is the ELF VM binary: it needs the 'e' (execute) bit;
+#  - a C:java copy makes `java` run from any Shell, not just the install
+#    drawer (the launcher CDs into JAVA: itself, so the copy works anywhere).
+def protectRuntime(home):
+    amiga.system('Protect >NIL: "' + home + '/java" +s')
+    amiga.system('Protect >NIL: "' + home + '/jamvm-openjdk" +e')
+    amiga.system('Copy >NIL: "' + home + '/java" C:java')
+    amiga.system('Protect >NIL: C:java +s')
+
+
+##############################################
+# clib4.library is the C runtime the VM and the bundled .so stubs call into.
+# A fresh AmigaOS 4 machine may not have it, so install the bundled copy to
+# LIBS: when it is absent.  An existing clib4.library is left untouched -- it
+# may be newer, and other applications may depend on it; the bundled copy stays
+# in the install drawer for a manual update.  Java-OS4 needs clib4 2.1+.
+def installClib4(home):
+    src = home + "/clib4.library"
+    if pathExists(src) and not pathExists("LIBS:clib4.library"):
+        amiga.system('Copy >NIL: "' + src + '" "LIBS:clib4.library"')
+        amiga.system('Protect >NIL: "LIBS:clib4.library" +rwed')
+
+
+##############################################
 # Pages
 
 welcomePage = NewPage(WELCOME)
@@ -133,6 +162,8 @@ def installExitHandler(page, direction):
     dest = GetString(destinationPage, "destination")
     addDrawerIcon(dest)
     addJavaAssign(dest)
+    protectRuntime(dest)
+    installClib4(dest)
     return True
 
 

@@ -1,7 +1,7 @@
 # Java-OS4
 
 ![status: beta](https://img.shields.io/badge/status-beta-orange)
-![version: 0.5.0](https://img.shields.io/badge/version-0.5.0-blue)
+![version: 0.5.1](https://img.shields.io/badge/version-0.5.1-blue)
 ![license: GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-green)
 
 **A Java 8 runtime for AmigaOS 4 (PowerPC) — JamVM 2.0 + the OpenJDK 8 class
@@ -56,22 +56,31 @@ windows. See [`docs/`](docs/) for screenshots of each milestone.
 
 A packaged release is an `.lha` containing a `Java-OS4` installer drawer.
 
+**Requirement:** `clib4.library` **2.1 or newer** in `LIBS:` — the C runtime the
+VM depends on. The installer copies the bundled copy there if it is missing
+(get the latest from [clib4](https://github.com/afxgroup/clib4) to update it).
+
 1. Unpack it anywhere on your AmigaOS 4 machine.
 2. Double-click the **Java-OS4** drawer icon to launch the installer (it runs
    under `Sys:Utilities/Installation Utility`). The wizard asks where to install
-   the runtime, copies it there, and adds a permanent `JAVA:` assign to
-   `S:User-Startup` (so it survives reboots).
-3. Run programs from a Shell:
+   the runtime, copies it there, adds a permanent `JAVA:` assign to
+   `S:User-Startup` (live immediately, no reboot needed), and copies the `java`
+   launcher to `C:` so it runs from any Shell.
+3. Run programs from a Shell — the release bundles runnable examples:
 
    ```
    java -version
-   java -cp myapp.jar Main
+   java -cp examples/HelloJava.jar HelloJava   ; headless demo
+   java -cp examples/SwingDemo.jar  SwingDemo   ; Swing demo
+   java -cp examples/testsuite.zip  VmSuite     ; self-test
    ```
 
    Swing/AWT applications need no extra flags. Application classpath entries are
    resolved from the `JAVA:` drawer; reference jars elsewhere by absolute path.
 
-> `javac` is not included — compile on a host JDK 8 and copy the `.jar` over.
+> `javac` is not included — compile on a host JDK 8 (use **`javac --release 8`**)
+> and copy the `.jar` over. Bytecode newer than Java 8 is rejected up front with
+> `UnsupportedClassVersionError` rather than failing mysteriously at run time.
 
 ## Building from source
 

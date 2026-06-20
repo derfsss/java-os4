@@ -33,12 +33,16 @@ class JavaOS4InstallerLocale:
             "it does not exist, and JAVA: will be assigned to it.")
 
         self.strings[self.MSG_FINISHED] = (
-            "Java-OS4 has been installed and the JAVA: assign added to "
-            "S:User-Startup.\n\n"
+            "Java-OS4 has been installed. JAVA: is assigned now (no reboot "
+            "needed) and added to S:User-Startup, and the 'java' command was "
+            "copied to C: so it runs from any Shell.\n\n"
             "Try it from a Shell:\n\n"
             "    java -version\n"
-            "    java -cp myapp.jar Main\n\n"
-            "Swing and AWT applications need no extra options.")
+            "    java -cp examples/HelloJava.jar HelloJava\n"
+            "    java -cp examples/SwingDemo.jar SwingDemo\n\n"
+            "Swing and AWT applications need no extra options. (Java-OS4 needs "
+            "clib4.library 2.1+ in LIBS:; the installer added the bundled copy "
+            "if it was missing.)")
 
         try:
             self.cat = catalog.OpenCatalog(catalogName, language,

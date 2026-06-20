@@ -7,7 +7,8 @@
 #   make vm        build the VM (libjvm.so + jamvm-openjdk launcher)
 #   make natives   build the OpenJDK 8 + AWT native libraries
 #   make toolkit   build the sun.awt.amiga toolkit + test zips
-#   make build     vm + natives + toolkit
+#   make tests     build the VM test suite + bundled examples
+#   make build     vm + natives + toolkit + tests
 #   make dist      assemble the install tree + the .lha release  (alias: lha)
 #   make release   build everything, then dist
 #   make clean-dist  remove build/release and the .lha
@@ -33,7 +34,7 @@ RUN    = $(DOCKER) run --rm -v "$(CURDIR):/work" -w /work $(DOCKER_IMAGE) sh
 RUN_C  = $(DOCKER) run --rm -v "$(CURDIR):/work" -v "$(CLIB4):/clib4" -w /work \
             $(DOCKER_IMAGE) sh
 
-.PHONY: image vm natives toolkit build dist lha release clean-dist help
+.PHONY: image vm natives toolkit tests build dist lha release clean-dist help
 
 help:
 	@sed -n 's/^#   //p' Makefile
@@ -52,7 +53,10 @@ natives:
 toolkit:
 	$(RUN_C) /work/tools/build-amigatoolkit.sh
 
-build: vm natives toolkit
+tests:
+	$(RUN) /work/tools/build-tests.sh
+
+build: vm natives toolkit tests
 
 # Gather the build outputs into build/release/Java and pack the .lha.
 # Run after `make build` (package.sh compiles nothing -- it only collects).

@@ -1,7 +1,7 @@
 From 87c87fbe99dc7a6c185c6eb16b177ff0ddd105a4 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 22:30:57 +0100
-Subject: [PATCH 01/10] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
+Subject: [PATCH 01/11] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
 
 JAmiga JamVM revival on ppc-amigaos-gcc 11.5 + clib4, plus OpenJDK 8
 (Temurin 8 rt.jar) class-library integration:
@@ -870,7 +870,7 @@ index 0000000..c15dc04
 + * link of JAmiga JamVM that are absent from the 2016 Amiga port / the current
 + * SDK.  Keep these together so they are easy to find and remove/replace as the
 + * real implementations land (clib4 migration, JNI native loading, etc.).
-+ * See the project build notes.
++ * See docs/revival-notes.md.
 + */
 +#include <stdint.h>
 +
@@ -1785,7 +1785,7 @@ index b901856..eb21865 100644
 From 79fb4ab57ff81a7279be88cf0334bd584109de78 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 23:20:17 +0100
-Subject: [PATCH 02/10] jam.c: enable the real sun.misc.Launcher system
+Subject: [PATCH 02/11] jam.c: enable the real sun.misc.Launcher system
  classloader on AmigaOS
 
 The earlier "no-output heisenbug" was missing openjdk natives (CDS stubs,
@@ -1841,7 +1841,7 @@ index 2951d20..eccffab 100644
 From e2b4d148d6b362166ce208582d557202a455130c Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 07:36:47 +0100
-Subject: [PATCH 03/10] Amiga path model: strip leading "/Volume:" in JVM_Open
+Subject: [PATCH 03/11] Amiga path model: strip leading "/Volume:" in JVM_Open
  + nativeLibOpen
 
 java.io presents canonical paths as Unix-absolute ("/Volume:dir/file") so
@@ -1915,7 +1915,7 @@ index aa1237b..1a6f5be 100644
 From 416f0e4d756e8a94ac74c1718b8edb6ea4dcaf9b Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 08:00:59 +0100
-Subject: [PATCH 04/10] properties.c: present user.dir as Unix-absolute
+Subject: [PATCH 04/11] properties.c: present user.dir as Unix-absolute
  ("/Volume:dir") on AmigaOS
 
 Part of the Amiga path model: java.io/java.nio see '/'-prefixed absolute paths
@@ -1964,7 +1964,7 @@ index b453d7b..19169ff 100644
 From 2552a6f5e94a3b271cf352ed72b887b4efd161f3 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 08:17:32 +0100
-Subject: [PATCH 05/10] Amiga launcher defaults: zero-flag -cp, java version
+Subject: [PATCH 05/11] Amiga launcher defaults: zero-flag -cp, java version
  "1.8.0"
 
 `jamvm-openjdk -cp app.jar Main` and `-version` now work with no extra flags
@@ -2116,7 +2116,7 @@ index ce73df6..742fc9c 100644
 From 4c1743055b88fd221bba7c481b03dee40e337b1a Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 10:04:13 +0100
-Subject: [PATCH 06/10] Cooperative GC safepoints for AmigaOS/clib4
+Subject: [PATCH 06/11] Cooperative GC safepoints for AmigaOS/clib4
  (multi-threaded stop-the-world)
 
 clib4's pthread_kill only sets a raw Exec signal bit -- the SIGUSR1 handler
@@ -2285,7 +2285,7 @@ index 6f4ccfc..84cc4ce 100644
 From e1c4e649d0f5647519fbb9dbd2a3cf2b41a2e8c8 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 11:59:19 +0100
-Subject: [PATCH 07/10] jni.c: FindClass must initialize the class (HotSpot
+Subject: [PATCH 07/11] jni.c: FindClass must initialize the class (HotSpot
  semantics)
 
 Jam_FindClass only loaded/linked; HotSpot's JNI FindClass also runs static
@@ -2328,7 +2328,7 @@ index 6edb60b..6886837 100644
 From 39516d34e8f801ac02e12960b60dbf432b47b304 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 17:51:22 +0100
-Subject: [PATCH 08/10] Shadow java.lang.Class.classLoader in ClassBlock pad
+Subject: [PATCH 08/11] Shadow java.lang.Class.classLoader in ClassBlock pad
  (Temurin 8)
 
 Temurin/late-8u backported the VM-injected java.lang.Class.classLoader field
@@ -2423,7 +2423,7 @@ index eccffab..014d937 100644
 From e38273c93d95600366610a2afd88f8ebd1773d23 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 22:28:11 +0100
-Subject: [PATCH 09/10] Fix clib4 exit wedge: self-terminate all Java threads
+Subject: [PATCH 09/11] Fix clib4 exit wedge: self-terminate all Java threads
  on VM exit
 
 clib4 exit() waits for every pthread child process to terminate before
@@ -2577,7 +2577,7 @@ index 84cc4ce..44d3d79 100644
 From 891ebfe73b01e23a67f7d5556e28cd2829b4bfdc Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 23:43:39 +0100
-Subject: [PATCH 10/10] GUI defaults: a Swing app runs with zero flags
+Subject: [PATCH 10/11] GUI defaults: a Swing app runs with zero flags
 
 classlibDefaultBootClassPath gains amigatoolkit.zip (the sun.awt.amiga
 toolkit, flat-relative like the rest), and classlibAddDefaultProperties sets
@@ -2631,6 +2631,55 @@ index 7777ada..c490688 100644
  #else
  #define classlibAddDefaultProperties(properties) \
      /* NOTHING TO DO */
+-- 
+2.49.0.windows.1
+
+
+From 642958d7da0d8a8b851c3dc0d26ffae9c6e5ba48 Mon Sep 17 00:00:00 2001
+From: Richard Gibbs <rich_gibbs@hotmail.com>
+Date: Sat, 20 Jun 2026 13:59:13 +0100
+Subject: [PATCH 11/11] class.c: reject class-file major > 52
+ (UnsupportedClassVersionError)
+
+Java 8 (class-file major 52) is the newest bytecode this VM's class library supports. parseClass now rejects newer class files up front, instead of letting them load and die far away with a BootstrapMethodError (the typical 'it just freezes' failure for Java 9+ code built without --release 8).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+---
+ src/class.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/src/class.c b/src/class.c
+index e0f4873..261ef81 100644
+--- a/src/class.c
++++ b/src/class.c
+@@ -260,6 +260,27 @@ Class *parseClass(char *classname, char *data, int offset, int len,
+     READ_U2(minor_version, ptr, len);
+     READ_U2(major_version, ptr, len);
+ 
++    /* Java 8 (class-file major 52) is the newest bytecode this VM's class
++       library supports.  Reject anything newer up front with a clear
++       UnsupportedClassVersionError -- otherwise a Java 9+ class loads here and
++       dies far away with a mysterious BootstrapMethodError the first time it
++       executes an indy string-concat (java.lang.invoke.StringConcatFactory is
++       absent from the Java 8 rt.jar), which is exactly the kind of failure
++       that reads as "it just freezes".  (minor_version only flags preview
++       features -- ignore it.) */
++    if(major_version > 52) {
++        char msg[256];
++        snprintf(msg, sizeof(msg),
++                 "%s has been compiled by a more recent version of the Java "
++                 "Runtime (class file version %d.0); this Java 8 runtime only "
++                 "recognizes class file versions up to 52.0 -- recompile with "
++                 "javac --release 8", classname ? classname : "A class",
++                 major_version);
++        signalChainedExceptionName("java/lang/UnsupportedClassVersionError",
++                                   msg, NULL);
++        return NULL;
++    }
++
+     if((class = allocClass()) == NULL)
+         return NULL;
+ 
 -- 
 2.49.0.windows.1
 
