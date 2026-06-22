@@ -1,7 +1,7 @@
 From 87c87fbe99dc7a6c185c6eb16b177ff0ddd105a4 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 22:30:57 +0100
-Subject: [PATCH 01/11] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
+Subject: [PATCH 01/12] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
 
 JAmiga JamVM revival on ppc-amigaos-gcc 11.5 + clib4, plus OpenJDK 8
 (Temurin 8 rt.jar) class-library integration:
@@ -1785,7 +1785,7 @@ index b901856..eb21865 100644
 From 79fb4ab57ff81a7279be88cf0334bd584109de78 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 23:20:17 +0100
-Subject: [PATCH 02/11] jam.c: enable the real sun.misc.Launcher system
+Subject: [PATCH 02/12] jam.c: enable the real sun.misc.Launcher system
  classloader on AmigaOS
 
 The earlier "no-output heisenbug" was missing openjdk natives (CDS stubs,
@@ -1841,7 +1841,7 @@ index 2951d20..eccffab 100644
 From e2b4d148d6b362166ce208582d557202a455130c Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 07:36:47 +0100
-Subject: [PATCH 03/11] Amiga path model: strip leading "/Volume:" in JVM_Open
+Subject: [PATCH 03/12] Amiga path model: strip leading "/Volume:" in JVM_Open
  + nativeLibOpen
 
 java.io presents canonical paths as Unix-absolute ("/Volume:dir/file") so
@@ -1915,7 +1915,7 @@ index aa1237b..1a6f5be 100644
 From 416f0e4d756e8a94ac74c1718b8edb6ea4dcaf9b Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 08:00:59 +0100
-Subject: [PATCH 04/11] properties.c: present user.dir as Unix-absolute
+Subject: [PATCH 04/12] properties.c: present user.dir as Unix-absolute
  ("/Volume:dir") on AmigaOS
 
 Part of the Amiga path model: java.io/java.nio see '/'-prefixed absolute paths
@@ -1964,7 +1964,7 @@ index b453d7b..19169ff 100644
 From 2552a6f5e94a3b271cf352ed72b887b4efd161f3 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 08:17:32 +0100
-Subject: [PATCH 05/11] Amiga launcher defaults: zero-flag -cp, java version
+Subject: [PATCH 05/12] Amiga launcher defaults: zero-flag -cp, java version
  "1.8.0"
 
 `jamvm-openjdk -cp app.jar Main` and `-version` now work with no extra flags
@@ -2116,7 +2116,7 @@ index ce73df6..742fc9c 100644
 From 4c1743055b88fd221bba7c481b03dee40e337b1a Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 10:04:13 +0100
-Subject: [PATCH 06/11] Cooperative GC safepoints for AmigaOS/clib4
+Subject: [PATCH 06/12] Cooperative GC safepoints for AmigaOS/clib4
  (multi-threaded stop-the-world)
 
 clib4's pthread_kill only sets a raw Exec signal bit -- the SIGUSR1 handler
@@ -2285,7 +2285,7 @@ index 6f4ccfc..84cc4ce 100644
 From e1c4e649d0f5647519fbb9dbd2a3cf2b41a2e8c8 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 11:59:19 +0100
-Subject: [PATCH 07/11] jni.c: FindClass must initialize the class (HotSpot
+Subject: [PATCH 07/12] jni.c: FindClass must initialize the class (HotSpot
  semantics)
 
 Jam_FindClass only loaded/linked; HotSpot's JNI FindClass also runs static
@@ -2328,7 +2328,7 @@ index 6edb60b..6886837 100644
 From 39516d34e8f801ac02e12960b60dbf432b47b304 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 17:51:22 +0100
-Subject: [PATCH 08/11] Shadow java.lang.Class.classLoader in ClassBlock pad
+Subject: [PATCH 08/12] Shadow java.lang.Class.classLoader in ClassBlock pad
  (Temurin 8)
 
 Temurin/late-8u backported the VM-injected java.lang.Class.classLoader field
@@ -2423,7 +2423,7 @@ index eccffab..014d937 100644
 From e38273c93d95600366610a2afd88f8ebd1773d23 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 22:28:11 +0100
-Subject: [PATCH 09/11] Fix clib4 exit wedge: self-terminate all Java threads
+Subject: [PATCH 09/12] Fix clib4 exit wedge: self-terminate all Java threads
  on VM exit
 
 clib4 exit() waits for every pthread child process to terminate before
@@ -2577,7 +2577,7 @@ index 84cc4ce..44d3d79 100644
 From 891ebfe73b01e23a67f7d5556e28cd2829b4bfdc Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 23:43:39 +0100
-Subject: [PATCH 10/11] GUI defaults: a Swing app runs with zero flags
+Subject: [PATCH 10/12] GUI defaults: a Swing app runs with zero flags
 
 classlibDefaultBootClassPath gains amigatoolkit.zip (the sun.awt.amiga
 toolkit, flat-relative like the rest), and classlibAddDefaultProperties sets
@@ -2638,7 +2638,7 @@ index 7777ada..c490688 100644
 From 642958d7da0d8a8b851c3dc0d26ffae9c6e5ba48 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <rich_gibbs@hotmail.com>
 Date: Sat, 20 Jun 2026 13:59:13 +0100
-Subject: [PATCH 11/11] class.c: reject class-file major > 52
+Subject: [PATCH 11/12] class.c: reject class-file major > 52
  (UnsupportedClassVersionError)
 
 Java 8 (class-file major 52) is the newest bytecode this VM's class library supports. parseClass now rejects newer class files up front, instead of letting them load and die far away with a BootstrapMethodError (the typical 'it just freezes' failure for Java 9+ code built without --release 8).
@@ -2679,6 +2679,339 @@ index e0f4873..261ef81 100644
 +
      if((class = allocClass()) == NULL)
          return NULL;
+ 
+-- 
+2.49.0.windows.1
+
+
+From c28250c77b2a9e195b98739b0eaff77e0515a183 Mon Sep 17 00:00:00 2001
+From: Richard Gibbs <rich_gibbs@hotmail.com>
+Date: Mon, 22 Jun 2026 13:10:33 +0100
+Subject: [PATCH 12/12] amiga: fix `java -cp` for relative + Volume:
+ classpaths, and an exit-path UAF
+
+Reworks the AmigaOS path model so `jamvm-openjdk -cp <app> Main` works from any
+current directory (amigans.net topic 10124):
+
+- chdir to the program dir at startup (amigaSetupCwd in os/amiga/os.c, called
+  from os/amiga/powerpc/init.c) so boot jars / java.home / on-demand natives
+  (libzip, ...) resolve at the install dir no matter where the user ran `java`.
+  clib4's chdir auto-restores the shell CurrentDir at exit, so there is no leak.
+- user.dir = the install (program) dir; the on-demand natives that the
+  ClassLoader loads are resolved relative to it.
+- path.separator = ";" on AmigaOS -- ":" is the volume separator, so it cannot
+  also separate path lists; ";" lets absolute "Volume:dir" entries survive in
+  java.class.path / java.library.path / sun.boot.library.path.
+- rewrite each -cp entry to an absolute Unix-form path (class.c amigaClassPath):
+  a relative entry anchors at the launch dir (#1); a "Volume:dir" entry gets a
+  leading '/' (#3).  The native open chokepoint strips the '/' back off.
+- shell() (the VM-helper-thread wrapper) now unlinks the Finalizer / Reference
+  Handler threads from the thread list and drops threads_count on exit while
+  vm_exiting, so amiga_exit's re-interrupt walk no longer traverses a
+  freed-but-linked Thread struct (a DSI use-after-free on shutdown that surfaced
+  once the real app classloader runs and spawns those threads).
+
+Verified on QEMU: relative + absolute Volume: -cp run from any cwd, no cwd leak,
+clean exit; regression Conf 13/13, Conf2 12/12, Conf3 12/12, NioTest 10/10,
+PathTest / PathT2 / ExecTest pass.  (Conf4 MT-GC stress hangs on the pre-change
+baseline too -- pre-existing, unrelated to this change.)
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ src/class.c                       | 53 ++++++++++++++++++++++++++-----
+ src/classlib/openjdk/dll.c        | 10 +++---
+ src/classlib/openjdk/properties.c | 13 ++++++--
+ src/os/amiga/os.c                 | 46 +++++++++++++++++++++++++++
+ src/os/amiga/powerpc/init.c       | 10 ++++++
+ src/properties.c                  | 29 +++++++++++++----
+ src/thread.c                      | 22 +++++++++++++
+ 7 files changed, 161 insertions(+), 22 deletions(-)
+
+diff --git a/src/class.c b/src/class.c
+index 261ef81..4a09e67 100644
+--- a/src/class.c
++++ b/src/class.c
+@@ -2265,17 +2265,54 @@ void parseBootClassPath() {
+     bcp_entries = j;
+ }
+ 
++#ifdef __amigaos4__
++/* Make each app -cp entry an ABSOLUTE Unix-form path.  user.dir is the install dir
++   (the VM chdir'd there), so a *relative* entry would wrongly resolve against the
++   install dir -- anchor it at the directory `java` was launched from instead.  An
++   Amiga "Volume:dir" entry just gets a leading '/' (UnixFileSystem then treats it
++   as absolute, and the native open chokepoint strips the '/' back off) -- this is
++   also what makes absolute "Volume:" classpaths work.  path.separator is ';' on
++   AmigaOS so the embedded ':' (and any spaces) are not re-split. */
++static char *amigaClassPath(char *cp) {
++    extern char *amiga_launch_cwd;            /* the launch dir "Volume:dir", or NULL */
++    char *launch = amiga_launch_cwd;
++    int llen = launch ? strlen(launch) : 0;
++    int n = strlen(cp), e = 1, i;
++    char *out, *o;
++
++    for(i = 0; i < n; i++)
++        if(cp[i] == ';') e++;
++    out = o = sysMalloc(n + e * (llen + 2) + 1);
++
++    for(i = 0; i < n; ) {
++        int s = i, hasvol = 0, k;
++        while(i < n && cp[i] != ';') i++;       /* entry = cp[s..i) */
++        for(k = s; k < i && cp[k] != '/'; k++)
++            if(cp[k] == ':') { hasvol = 1; break; }
++        if(cp[s] != '/') {                      /* make it absolute */
++            *o++ = '/';
++            if(!hasvol && launch != NULL) {     /* relative -> anchor at launch dir */
++                memcpy(o, launch, llen); o += llen;
++                *o++ = '/';
++            }
++        }
++        memcpy(o, &cp[s], i - s); o += i - s;
++        if(i < n) *o++ = cp[i++];               /* keep the ';' separator */
++    }
++    *o = '\0';
++    return out;
++}
++#endif
++
+ void setClassPath(InitArgs *args) {
+     char *env;
+ #ifdef __amigaos4__
+-    /* Default to an EMPTY app classpath, not "." -- on AmigaOS "." canonicalises
+-       to the volume path (e.g. "AmigaOS:Test"), which sun.misc.Launcher's
+-       URLClassPath then mangles (':' = path.separator vs Amiga "volume:") /
+-       mis-converts to a URL ("volume:" looks like a scheme).  An empty
+-       java.class.path gives the AppClassLoader no entries to choke on; the app
+-       class is supplied on -Xbootclasspath and found via bootstrap delegation. */
+-    classpath = args->classpath ? args->classpath :
+-                 ((env = getenv("CLASSPATH")) ? env : "");
++    /* Rewrite the -cp to launch-anchored absolute Unix paths (see amigaClassPath);
++       empty when none given (on AmigaOS "." canonicalises to a volume path the
++       URLClassPath mis-handles). */
++    char *raw = args->classpath ? args->classpath :
++                 ((env = getenv("CLASSPATH")) ? env : NULL);
++    classpath = raw != NULL ? amigaClassPath(raw) : "";
+ #else
+     classpath = args->classpath ? args->classpath :
+                  ((env = getenv("CLASSPATH")) ? env : ".");
+diff --git a/src/classlib/openjdk/dll.c b/src/classlib/openjdk/dll.c
+index 11d2088..5f78abd 100644
+--- a/src/classlib/openjdk/dll.c
++++ b/src/classlib/openjdk/dll.c
+@@ -42,11 +42,11 @@ int classlibInitialiseDll() {
+ }
+ 
+ #ifdef __amigaos4__
+-/* Flat Amiga layout: the native .so files live beside the VM, and the standard
+-   launch CDs to the install dir -- so the default boot library path is ".".
+-   ("Volume:dir" here would be split on its ':' by java.lang.ClassLoader's
+-   path.separator parsing; the "./lib.so" form is normalised by the native
+-   open/dlopen chokepoints.) */
++/* The native .so files live beside the VM, and the VM chdir's to its own program
++   dir at startup (amigaSetupCwd) -- and user.dir is that same install dir -- so the
++   boot library path is ".".  java.lang.ClassLoader resolves "." against user.dir =
++   the install dir, finding the natives there.  Colon-free, so path.separator (';')
++   does not split it; the "./lib.so" form is normalised by the native open chokepoint. */
+ char *classlibDefaultBootDllPath() {
+     char *dll_path = sysMalloc(2);
+     return strcpy(dll_path, ".");
+diff --git a/src/classlib/openjdk/properties.c b/src/classlib/openjdk/properties.c
+index 481963b..fc8877e 100644
+--- a/src/classlib/openjdk/properties.c
++++ b/src/classlib/openjdk/properties.c
+@@ -30,9 +30,18 @@
+    explicitly via -Xbootclasspath and -Dsun.boot.library.path, so they don't
+    depend on the (Unix-shaped) java.home/lib/... derivation. */
+ char *classlibDefaultJavaHome() {
+-    char *path = nativeJVMPath();
+-    char *pntr, *home;
++    /* java.home = the VM's program directory (PROGDIR:, e.g. "SYS:Java"), where
++       libjvm.so + the boot jars + lib/ all live (flat layout).  Resolve it from
++       PROGDIR: so it is independent of the current dir (the launcher no longer
++       CDs there).  Fall back to deriving it from libjvm.so's own path. */
++    extern char *amigaProgramDir(void);
++    char *pd = amigaProgramDir();
++    char *path, *pntr, *home;
++
++    if(pd != NULL)
++        return strcpy(sysMalloc(strlen(pd) + 1), pd);
+ 
++    path = nativeJVMPath();
+     if(path == NULL)
+         return NULL;
+ 
+diff --git a/src/os/amiga/os.c b/src/os/amiga/os.c
+index 1a6f5be..0bae66a 100644
+--- a/src/os/amiga/os.c
++++ b/src/os/amiga/os.c
+@@ -73,6 +73,50 @@ char *nativeLibError() {
+     return dlerror();
+ }
+ 
++/* The VM's own program directory (PROGDIR:) as a real, absolute AmigaDOS path
++   (e.g. "SYS:Java"), resolved once and cached.  Lets the boot jars, java.home
++   and the bundled native libraries be found relative to where jamvm-openjdk
++   lives -- INDEPENDENT of the current directory, so the `java` launcher no
++   longer has to `CD JAVA:` (which leaked into the caller's shell and re-based
++   the user's relative -cp).  NULL if PROGDIR: can't be resolved -- callers then
++   fall back to their old cwd-relative behaviour. */
++char *amigaProgramDir(void) {
++    static char *cached = NULL;
++    static int tried = FALSE;
++    BPTR lock;
++    char buff[1024];
++
++    if(tried)
++        return cached;
++    tried = TRUE;
++
++    lock = GetProgramDir();
++    if(lock != 0 && NameFromLock(lock, (STRPTR)buff, sizeof(buff)))
++        cached = strcpy(sysMalloc(strlen(buff) + 1), buff);   /* "Volume:dir" */
++
++    return cached;
++}
++
++/* The directory `java` was launched from (the user's cwd), captured before the
++   startup chdir -- setUserDirProperty() uses it for java.io's user.dir so a
++   relative -cp resolves against the USER's dir, not the install drawer. */
++char *amiga_launch_cwd = NULL;
++
++/* Run the VM with its current dir = its own program directory, so the colon-free,
++   cwd-relative boot classpath / sun.boot.library.path / java.home resolve against
++   the install drawer.  (On AmigaOS ':' is BOTH the volume separator and Java's
++   path.separator, so absolute paths cannot be used in those path *lists*.)  clib4
++   saves the entry CurrentDir and its destructor restores it at exit, so this does
++   NOT leak into the caller's shell.  Called once from initialisePlatform(). */
++void amigaSetupCwd(void) {
++    char *pd;
++
++    amiga_launch_cwd = getCwd();        /* the launch cwd -- BEFORE the chdir */
++    pd = amigaProgramDir();
++    if(pd != NULL)
++        chdir(pd);
++}
++
+ char *nativeLibPath() {
+     return getenv("LD_LIBRARY_PATH");
+ }
+@@ -83,6 +127,8 @@ void *nativeLibOpen(char *path) {
+        (and a leading "./") so clib4 dlopen gets a real AmigaDOS path. */
+     char *p = path;
+     void *h;
++    if(path == NULL)
++        return NULL;
+     if(p[0] == '.' && p[1] == '/')
+         p += 2;
+     else if(p[0] == '/') {
+diff --git a/src/os/amiga/powerpc/init.c b/src/os/amiga/powerpc/init.c
+index 60d01ae..cd42452 100644
+--- a/src/os/amiga/powerpc/init.c
++++ b/src/os/amiga/powerpc/init.c
+@@ -50,4 +50,14 @@ void initialisePlatform() {
+     /* Re-point error output once more in case Output() was just created. */
+     if(ErrorOutput() == 0)
+         SelectErrorOutput(Output());
++
++    /* Switch the current dir to the VM's own program directory so the colon-free
++       runtime paths (boot classpath, sun.boot.library.path, java.home) resolve
++       there regardless of where `java` was launched -- without leaking the dir
++       change into the caller's shell, and keeping user.dir = the launch dir.
++       See amigaSetupCwd() in os/amiga/os.c. */
++    {
++        extern void amigaSetupCwd(void);
++        amigaSetupCwd();
++    }
+ }
+diff --git a/src/properties.c b/src/properties.c
+index 19169ff..9dd6bca 100644
+--- a/src/properties.c
++++ b/src/properties.c
+@@ -150,15 +150,20 @@ char *getExecutionEngineName() {
+ }
+ 
+ void setUserDirProperty(Object *properties) {
+-    char *cwd = getCwd();
++    char *cwd;
+ 
+ #ifdef __amigaos4__
+-    /* Present user.dir as Unix-absolute ("/Volume:dir") -- part of the Amiga
+-       path model: java.io/java.nio see '/'-prefixed absolute paths (so
+-       File.isAbsolute()/toURI()/UnixFileSystem don't mis-handle "Volume:"),
+-       and the native open/stat chokepoints strip the '/' back off.  Without
+-       this, sun.nio.fs.UnixFileSystem rejects user.dir ("default directory
+-       must be absolute") and File.getAbsolutePath() doubles paths. */
++    /* user.dir = the install dir (= the VM's program dir, which it chdir'd to at
++       startup).  The on-demand natives (libzip, ...) are loaded by ClassLoader
++       RELATIVE TO user.dir, so user.dir must be the install dir for them to
++       resolve.  The user's -cp is made launch-absolute in setClassPath, so it
++       still resolves where `java` was run.  (getCwd() does not reliably reflect
++       the startup chdir, so derive it from the program dir.)  Present it
++       Unix-absolute ("/Volume:dir") so java.io/java.nio accept it -- the native
++       open/stat chokepoints strip the '/' back off. */
++    extern char *amigaProgramDir(void);
++    char *pd = amigaProgramDir();
++    cwd = pd != NULL ? strcpy(sysMalloc(strlen(pd) + 1), pd) : getCwd();
+     if(cwd != NULL && cwd[0] != '/') {
+         char *slashed = sysMalloc(strlen(cwd) + 2);
+         slashed[0] = '/';
+@@ -166,6 +171,8 @@ void setUserDirProperty(Object *properties) {
+         sysFree(cwd);
+         cwd = slashed;
+     }
++#else
++    cwd = getCwd();
+ #endif
+ 
+     setProperty(properties, "user.dir", cwd);
+@@ -206,7 +213,15 @@ void addDefaultProperties(Object *properties) {
+     setProperty(properties, "java.ext.dirs", classlibDefaultExtDirs());
+     setProperty(properties, "java.io.tmpdir", "/tmp");
+     setProperty(properties, "file.separator", "/");
++#ifdef __amigaos4__
++    /* On AmigaOS ':' is the volume separator (RAM:, Work:), so it cannot also be
++       the path-list separator -- absolute paths in java.class.path /
++       java.library.path / sun.boot.library.path would be mangled.  Use ';' like
++       Windows (whose ':' is the drive separator); multiple -cp entries use ';'. */
++    setProperty(properties, "path.separator", ";");
++#else
+     setProperty(properties, "path.separator", ":");
++#endif
+     setProperty(properties, "line.separator", "\n");
+     setProperty(properties, "user.name", getenv("USER"));
+     setProperty(properties, "user.home", getenv("HOME"));
+diff --git a/src/thread.c b/src/thread.c
+index 44d3d79..9d7f66f 100644
+--- a/src/thread.c
++++ b/src/thread.c
+@@ -816,6 +816,28 @@ static void *shell(void *args) {
+ 
+     sysFree(args);
+     (*(void(*)(Thread*))start)(self);
++
++#ifdef __amigaos4__
++    /* A VM helper thread (Finalizer/Reference Handler) reaches here when its loop
++       returns during cooperative VM shutdown -- shell() does NOT call detachThread,
++       so without this the struct stays LINKED in the thread list (and threads_count
++       is not dropped) after the pthread is gone.  The exit re-interrupt walk
++       (exitWakeAllThreads, called repeatedly from amiga_exit) then traverses the
++       dead struct -> use-after-free crash.  Unlink it and drop the count under the
++       list lock so the re-walk skips it and amiga_exit's getThreadsCount() drains. */
++    {
++        extern volatile int vm_exiting;
++        if(vm_exiting) {
++            pthread_mutex_lock(&lock);
++            if(self->prev != NULL && (self->prev->next = self->next))
++                self->next->prev = self->prev;
++            if(threads_count > 0)
++                threads_count--;
++            pthread_mutex_unlock(&lock);
++        }
++    }
++#endif
++
+     return NULL;
+ }
  
 -- 
 2.49.0.windows.1
