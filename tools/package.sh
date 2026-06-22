@@ -42,17 +42,17 @@ mkdir -p "$RT/lib/fonts"
 cp "$B/jamvm-openjdk" "$RT/jamvm-openjdk"
 cp "$B/libjvm.so"     "$RT/"
 
-# `java` launcher: CD into JAVA: (assigned to the install drawer by install.py)
-# so the colon-free, CWD-relative default boot classpath resolves, and point
-# the loader at the bundled sobjs (the .so rpath is the dev build dir;
-# LD_LIBRARY_PATH="." overrides to the install drawer).
+# `java` launcher.  It does NOT change directory: the VM finds its own runtime
+# (boot jars, java.home, native libs) relative to PROGDIR: -- jamvm-openjdk's own
+# directory -- so the caller's shell cwd is left untouched and the user's
+# relative -cp resolves against THEIR directory.  LD_LIBRARY_PATH="PROGDIR:"
+# points the ELF loader at the bundled sobjs beside the VM regardless of cwd.
 {
     echo ".KEY args/F"
     echo ".BRA {"
     echo ".KET }"
     echo ";\$VER: Java-OS4 $PVER ($DATE) OpenJDK $JVER"
-    echo "CD JAVA:"
-    echo 'SetEnv LD_LIBRARY_PATH "."'
+    echo 'SetEnv LD_LIBRARY_PATH "PROGDIR:"'
     echo "JAVA:jamvm-openjdk {args}"
 } > "$RT/java"
 
@@ -127,8 +127,8 @@ Shell.  Try:
     java -cp examples/testsuite.zip  VmSuite
 
 Swing/AWT applications need no extra flags -- the Amiga toolkit is the default.
-App classpath entries resolve from the JAVA: drawer (the launcher CDs there);
-reference jars elsewhere by absolute path.  'javac' is not included -- compile
+App classpath (-cp) entries resolve relative to your CURRENT directory, like a
+normal `java` command -- run from anywhere.  'javac' is not included -- compile
 on a host JDK 8 with 'javac --release 8' and copy the jar over.  Bytecode newer
 than Java 8 is rejected up front with UnsupportedClassVersionError.
 

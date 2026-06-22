@@ -93,7 +93,7 @@ echo "=== linking libjvm.so (shared VM) ==="
 # Plain -shared (NOT -use-dynld, which forces --no-undefined): leave libc/pthread/
 # zlib/JNI undefined -> resolved at runtime against the clib4 sobjs that the
 # -use-dynld launcher loads (global symbol scope), same as the classpath natives.
-ppc-amigaos-gcc -mcrt=clib4 -shared -fPIC -Wl,-rpath=SYS:Test \
+ppc-amigaos-gcc -mcrt=clib4 -shared -fPIC -Wl,-rpath=PROGDIR: \
     -o "$DEST/libjvm.so" $OBJS
 echo "  libjvm.so OK ($(wc -c < "$DEST/libjvm.so") bytes)"
 
@@ -113,7 +113,7 @@ ppc-amigaos-gcc -mcrt=clib4 -O2 -fPIC \
 # jamvm launcher = jam.c (main) linked AGAINST libjvm.so -- one shared VM instance
 # (so jam.c's main and any dlopen'd libjava see the same VM).
 echo "=== linking jamvm-openjdk launcher (-> libjvm.so) ==="
-ppc-amigaos-gcc -mcrt=clib4 -use-dynld -athread=native -Wl,-rpath=SYS:Test \
+ppc-amigaos-gcc -mcrt=clib4 -use-dynld -athread=native -Wl,-rpath=PROGDIR: \
     -o "$DEST/jamvm-openjdk" "$JAMO" "$OUT/verstag.o" -L"$DEST" -ljvm \
     -lpthread -lm -lrt -lz -lauto
 echo "LINK OK"
