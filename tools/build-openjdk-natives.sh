@@ -320,14 +320,16 @@ else
     echo "  libjava.so LINK FAIL"; head -20 "$OUT/e"
 fi
 
-echo "=== libzip.so (java.util.zip + bundled zlib-1.2.8) ==="
+echo "=== libzip.so (java.util.zip + bundled zlib-1.2.13) ==="
 # System.initializeSystemClass() calls loadLibrary("zip") -> libzip.so must exist
-# on java.library.path (= sun.boot.library.path = SYS:Test).  OpenJDK bundles
-# zlib-1.2.8 (USE_EXTERNAL_LIBZ=false default), so compile it in -> self-contained
-# (no dependency on clib4's libz version).  JNU_*/jio_* come from libjava at runtime
-# (leave undefined, like libjava leaves JVM_* undefined).
+# on java.library.path (= sun.boot.library.path = SYS:Test).  zlib is compiled in
+# (USE_EXTERNAL_LIBZ=false) -> self-contained (no dependency on clib4's libz version).
+# Updated from OpenJDK 8u's in-tree zlib-1.2.8 (2013) to a TRACKED in-repo zlib-1.2.13
+# (2022, tools/zlib-1.2.13/) -- security + inflate fixes; keeps OpenJDK's case-clash
+# file names zadler32.c/zcrc32.c.  JNU_*/jio_* come from libjava at runtime (leave
+# undefined, like libjava leaves JVM_* undefined).
 ZIP=$J/src/share/native/java/util/zip
-ZLIB=$ZIP/zlib-1.2.8
+ZLIB=/work/tools/zlib-1.2.13
 # Temurin 8 (a late 8u) dropped the addSlash arg from ZipFile.getEntry; the 8u77
 # IcedTea native drop still has it -> signature clash with the javah header from
 # Temurin's rt.jar.  Match the runtime class library: drop addSlash, pass JNI_FALSE
