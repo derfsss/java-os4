@@ -1,7 +1,7 @@
 # Java-OS4
 
 ![status: beta](https://img.shields.io/badge/status-beta-orange)
-![version: 0.5.2](https://img.shields.io/badge/version-0.5.2-blue)
+![version: 0.5.3](https://img.shields.io/badge/version-0.5.3-blue)
 ![license: GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-green)
 
 **A Java 8 runtime for AmigaOS 4 (PowerPC) — JamVM 2.0 + the OpenJDK 8 class
