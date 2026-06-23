@@ -10,6 +10,7 @@
 #   make natives   build the OpenJDK 8 + AWT native libraries
 #   make toolkit   build the sun.awt.amiga toolkit + test zips
 #   make tests     build the VM test suite + bundled examples
+#   make test-charset  host-compile + run the Amiga charset-name unit test
 #   make build     clib4 + vm + natives + toolkit + tests
 #   make dist      assemble the install tree + the .lha release  (alias: lha)
 #   make release   build everything, then dist
@@ -34,7 +35,7 @@ LHA     := build/JavaOS4-$(VERSION).lha
 DOCKER = MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker
 RUN    = $(DOCKER) run --rm -v "$(CURDIR):/work" -w /work $(DOCKER_IMAGE) sh
 
-.PHONY: vendor image clib4 vm natives toolkit tests build dist lha release clean-dist help
+.PHONY: vendor image clib4 vm natives toolkit tests test-charset build dist lha release clean-dist help
 
 help:
 	@sed -n 's/^#   //p' Makefile
@@ -67,6 +68,11 @@ toolkit:
 
 tests:
 	$(RUN) /work/tools/build-tests.sh
+
+# Host-compile + run the AmigaOS charset-name unit test (the "Amiga-1251" fix);
+# 10 languages + crash-avoidance edge cases.  Runs in the image's host cc.
+test-charset:
+	$(RUN) -c 'mkdir -p /work/build && cc /work/tools/test-amiga-charset.c -o /work/build/test-amiga-charset && /work/build/test-amiga-charset'
 
 build: clib4 vm natives toolkit tests
 

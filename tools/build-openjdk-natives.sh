@@ -35,6 +35,22 @@ CC="ppc-amigaos-gcc -mcrt=clib4 -fPIC -O2 -w -fcommon"
 COMPAT="$OUT/compat"
 mkdir -p "$COMPAT/sys"
 echo '#include <signal.h>' > "$COMPAT/sys/signal.h"   # clib4 has <signal.h>, no <sys/signal.h>
+# Single-source-of-truth Amiga charset-name normaliser (the "Amiga-1251" fix):
+# force-included via jdkdefs.h below and called from java_props_md.c ParseLocale().
+# Tested on the host by tools/test-amiga-charset.c against the same header.
+cp /work/src/openjdk/amiga_charset.h "$COMPAT/amiga_charset.h"
+# Self-test that normaliser on the HOST compiler before building libjava, so a
+# broken charset mapping fails the build fast (10 languages + edge cases).
+# Skipped (with a warning) if no host cc/gcc is present.
+HOSTCC=$(command -v cc || command -v gcc || true)
+if [ -n "$HOSTCC" ]; then
+    if "$HOSTCC" /work/tools/test-amiga-charset.c -o "$OUT/test-amiga-charset" 2>"$OUT/e"; then
+        "$OUT/test-amiga-charset" || { echo "FATAL: amiga charset self-test FAILED"; exit 1; }
+        echo "=== amiga charset self-test PASSED ==="
+    else
+        echo "WARN: host-compile of test-amiga-charset.c failed; skipping self-test"; head -3 "$OUT/e"
+    fi
+fi
 # String-literal defines OpenJDK's makefiles pass via -D (ARCHPROPNAME, version);
 # put them in a -include header so the C-string quoting survives cleanly.
 cat > "$COMPAT/jdkdefs.h" <<'EOF'
@@ -115,6 +131,9 @@ static int amiga_canonicalize(char *path, char *out, int len) {
     out[n] = 0;
     return 0;
 }
+/* AmigaOS charset-name normaliser (the "Amiga-1251" fix); single source of
+   truth in src/openjdk/amiga_charset.h, copied into $COMPAT above. */
+#include "amiga_charset.h"
 #endif
 EOF
 
@@ -209,6 +228,23 @@ if [ -f "$TZMD" ] && ! grep -q "defined(MACOSX) || defined(__amigaos4__)" "$TZMD
       -e 's@^#if defined(MACOSX)$@#if defined(MACOSX) || defined(__amigaos4__)@' \
       "$TZMD"
     echo "=== adapted TimeZone_md.c (amigaos -> linux tz-files + tm_gmtoff GMT offset) ==="
+fi
+
+# java_props_md.c ParseLocale(): clib4's nl_langinfo(CODESET) returns the AmigaOS
+# diskfont MIME charset family "Amiga-NNNN" (ObtainCharsetInfo DFCS_MIMENAME) verbatim
+# -- e.g. "Amiga-1251" on a Cyrillic locale.  The JDK has no charset provider named
+# "Amiga-1251", so file.encoding/sun.jnu.encoding="Amiga-1251" forces the lazy
+# ExtendedProviderHolder.<clinit> re-entrantly during initProperties (before
+# sun.misc.VM.booted()) -> the cached class-init failure surfaces as
+# java.lang.NoClassDefFoundError "unsupported charset extension: Amiga-1251".
+# Normalise the name right after *std_encoding is set, via amiga_normalize_encoding()
+# (src/openjdk/amiga_charset.h, force-included through jdkdefs.h above; the mapping
+# table and its rationale live there and are host-tested by tools/test-amiga-charset.c).
+# Pure no-op for any non-"Amiga" value.  Idempotent (guard: the inserted call).
+JPM="$J/src/solaris/native/java/lang/java_props_md.c"
+if [ -f "$JPM" ] && ! grep -q 'amiga_normalize_encoding' "$JPM"; then
+    perl -0pi -e 's{(\? p : "ISO8859-1";\n)}{$1#ifdef __amigaos4__\n        /* AmigaOS diskfont reports a vendor charset name (e.g. "Amiga-1251")\n         * the JDK cannot resolve -> NoClassDefFoundError at bootstrap; map it\n         * to a standard-provider charset name (see src/openjdk/amiga_charset.h). */\n        *std_encoding = (char *) amiga_normalize_encoding(*std_encoding);\n#endif\n}gs' "$JPM"
+    echo "=== adapted java_props_md.c (Amiga charset-name normalise via amiga_normalize_encoding) ==="
 fi
 
 # OpenJDK export headers (jni.h/jvm.h) + per-OS jni_md.h/jvm_md.h (solaris=unix) +
