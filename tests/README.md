@@ -51,6 +51,10 @@ namespace, which you may not declare).
 - `KeyBindTest` — fix #4: `WHEN_IN_FOCUSED_WINDOW` key bindings must fire.
 - `VersionGateTest` — fix #5: a major-53 class must be rejected with
   `UnsupportedClassVersionError`.
+- `BootClassPathTest` — fix #6 (forum 0.5.3): `sun.boot.class.path` must be
+  `path.separator`-joined and resolvable, so there is no "Please insert volume
+  niopatch.zip" requester and `sun.reflect.misc.MethodUtil`'s `Trampoline` is not
+  defined by the bootstrap loader (`java.beans.Expression` reflective bounce works).
 
 ## Building + running
 

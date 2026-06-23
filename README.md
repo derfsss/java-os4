@@ -1,7 +1,7 @@
 # Java-OS4
 
 ![status: beta](https://img.shields.io/badge/status-beta-orange)
-![version: 0.5.3](https://img.shields.io/badge/version-0.5.3-blue)
+![version: 0.5.4](https://img.shields.io/badge/version-0.5.4-blue)
 ![license: GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-green)
 
 **A Java 8 runtime for AmigaOS 4 (PowerPC) — JamVM 2.0 + the OpenJDK 8 class
@@ -57,7 +57,13 @@ windows. See [`docs/`](docs/) for screenshots of each milestone.
 A packaged release is an `.lha` containing a `Java-OS4` installer drawer.
 **Download the latest from the
 [Releases page](https://github.com/derfsss/java-os4/releases)**, or build it from
-source (see [Building from source](#building-from-source) below).
+source (see [Building from source](#building-from-source) below). Per-release
+changes are listed in [`CHANGELOG.md`](CHANGELOG.md).
+
+> **0.5.4** fixes the `sun.boot.class.path` separator on AmigaOS: Swing apps and
+> the test suite no longer pop a *"Please insert volume niopatch.zip"* requester
+> or crash with *"Trampoline must not be defined by the bootstrap class loader"*
+> (amigans.net report). Upgrading is recommended for anyone on 0.5.1–0.5.3.
 
 **Requirements:**
 

@@ -1,7 +1,7 @@
 From 87c87fbe99dc7a6c185c6eb16b177ff0ddd105a4 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 22:30:57 +0100
-Subject: [PATCH 01/12] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
+Subject: [PATCH 01/13] Amiga OS4 / clib4 port + OpenJDK 8 classlib bring-up
 
 JAmiga JamVM revival on ppc-amigaos-gcc 11.5 + clib4, plus OpenJDK 8
 (Temurin 8 rt.jar) class-library integration:
@@ -1785,7 +1785,7 @@ index b901856..eb21865 100644
 From 79fb4ab57ff81a7279be88cf0334bd584109de78 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Tue, 9 Jun 2026 23:20:17 +0100
-Subject: [PATCH 02/12] jam.c: enable the real sun.misc.Launcher system
+Subject: [PATCH 02/13] jam.c: enable the real sun.misc.Launcher system
  classloader on AmigaOS
 
 The earlier "no-output heisenbug" was missing openjdk natives (CDS stubs,
@@ -1841,7 +1841,7 @@ index 2951d20..eccffab 100644
 From e2b4d148d6b362166ce208582d557202a455130c Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 07:36:47 +0100
-Subject: [PATCH 03/12] Amiga path model: strip leading "/Volume:" in JVM_Open
+Subject: [PATCH 03/13] Amiga path model: strip leading "/Volume:" in JVM_Open
  + nativeLibOpen
 
 java.io presents canonical paths as Unix-absolute ("/Volume:dir/file") so
@@ -1915,7 +1915,7 @@ index aa1237b..1a6f5be 100644
 From 416f0e4d756e8a94ac74c1718b8edb6ea4dcaf9b Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 08:00:59 +0100
-Subject: [PATCH 04/12] properties.c: present user.dir as Unix-absolute
+Subject: [PATCH 04/13] properties.c: present user.dir as Unix-absolute
  ("/Volume:dir") on AmigaOS
 
 Part of the Amiga path model: java.io/java.nio see '/'-prefixed absolute paths
@@ -1964,7 +1964,7 @@ index b453d7b..19169ff 100644
 From 2552a6f5e94a3b271cf352ed72b887b4efd161f3 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 08:17:32 +0100
-Subject: [PATCH 05/12] Amiga launcher defaults: zero-flag -cp, java version
+Subject: [PATCH 05/13] Amiga launcher defaults: zero-flag -cp, java version
  "1.8.0"
 
 `jamvm-openjdk -cp app.jar Main` and `-version` now work with no extra flags
@@ -2116,7 +2116,7 @@ index ce73df6..742fc9c 100644
 From 4c1743055b88fd221bba7c481b03dee40e337b1a Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 10:04:13 +0100
-Subject: [PATCH 06/12] Cooperative GC safepoints for AmigaOS/clib4
+Subject: [PATCH 06/13] Cooperative GC safepoints for AmigaOS/clib4
  (multi-threaded stop-the-world)
 
 clib4's pthread_kill only sets a raw Exec signal bit -- the SIGUSR1 handler
@@ -2285,7 +2285,7 @@ index 6f4ccfc..84cc4ce 100644
 From e1c4e649d0f5647519fbb9dbd2a3cf2b41a2e8c8 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 11:59:19 +0100
-Subject: [PATCH 07/12] jni.c: FindClass must initialize the class (HotSpot
+Subject: [PATCH 07/13] jni.c: FindClass must initialize the class (HotSpot
  semantics)
 
 Jam_FindClass only loaded/linked; HotSpot's JNI FindClass also runs static
@@ -2328,7 +2328,7 @@ index 6edb60b..6886837 100644
 From 39516d34e8f801ac02e12960b60dbf432b47b304 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 17:51:22 +0100
-Subject: [PATCH 08/12] Shadow java.lang.Class.classLoader in ClassBlock pad
+Subject: [PATCH 08/13] Shadow java.lang.Class.classLoader in ClassBlock pad
  (Temurin 8)
 
 Temurin/late-8u backported the VM-injected java.lang.Class.classLoader field
@@ -2423,7 +2423,7 @@ index eccffab..014d937 100644
 From e38273c93d95600366610a2afd88f8ebd1773d23 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 22:28:11 +0100
-Subject: [PATCH 09/12] Fix clib4 exit wedge: self-terminate all Java threads
+Subject: [PATCH 09/13] Fix clib4 exit wedge: self-terminate all Java threads
  on VM exit
 
 clib4 exit() waits for every pthread child process to terminate before
@@ -2577,7 +2577,7 @@ index 84cc4ce..44d3d79 100644
 From 891ebfe73b01e23a67f7d5556e28cd2829b4bfdc Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <wofderfs@googlemail.com>
 Date: Wed, 10 Jun 2026 23:43:39 +0100
-Subject: [PATCH 10/12] GUI defaults: a Swing app runs with zero flags
+Subject: [PATCH 10/13] GUI defaults: a Swing app runs with zero flags
 
 classlibDefaultBootClassPath gains amigatoolkit.zip (the sun.awt.amiga
 toolkit, flat-relative like the rest), and classlibAddDefaultProperties sets
@@ -2638,7 +2638,7 @@ index 7777ada..c490688 100644
 From 642958d7da0d8a8b851c3dc0d26ffae9c6e5ba48 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <rich_gibbs@hotmail.com>
 Date: Sat, 20 Jun 2026 13:59:13 +0100
-Subject: [PATCH 11/12] class.c: reject class-file major > 52
+Subject: [PATCH 11/13] class.c: reject class-file major > 52
  (UnsupportedClassVersionError)
 
 Java 8 (class-file major 52) is the newest bytecode this VM's class library supports. parseClass now rejects newer class files up front, instead of letting them load and die far away with a BootstrapMethodError (the typical 'it just freezes' failure for Java 9+ code built without --release 8).
@@ -2687,7 +2687,7 @@ index e0f4873..261ef81 100644
 From c28250c77b2a9e195b98739b0eaff77e0515a183 Mon Sep 17 00:00:00 2001
 From: Richard Gibbs <rich_gibbs@hotmail.com>
 Date: Mon, 22 Jun 2026 13:10:33 +0100
-Subject: [PATCH 12/12] amiga: fix `java -cp` for relative + Volume:
+Subject: [PATCH 12/13] amiga: fix `java -cp` for relative + Volume:
  classpaths, and an exit-path UAF
 
 Reworks the AmigaOS path model so `jamvm-openjdk -cp <app> Main` works from any
@@ -3013,6 +3013,170 @@ index 44d3d79..9d7f66f 100644
      return NULL;
  }
  
+-- 
+2.49.0.windows.1
+
+
+From 416f0762908ab750cbc623cc6d0a744fad194766 Mon Sep 17 00:00:00 2001
+From: Richard Gibbs <rich_gibbs@hotmail.com>
+Date: Tue, 23 Jun 2026 19:37:56 +0100
+Subject: [PATCH 13/13] amiga: sun.boot.class.path uses ';' + absolute paths
+ (fix niopatch requester / Trampoline)
+
+On AmigaOS path.separator is ';' (':' is the volume separator), but JamVM exposed
+sun.boot.class.path as its raw ':'-joined C boot path.  OpenJDK's
+sun.misc.Launcher.getBootstrapClassPath() splits sun.boot.class.path on
+path.separator, so the whole value was read as ONE entry "niopatch.zip:...":
+AmigaDOS treated the leading "niopatch.zip:" as a missing volume (the "Please
+insert volume niopatch.zip" requester), and every getBootstrapResource() failed.
+That broke sun.reflect.misc.MethodUtil -- unable to read sun/reflect/misc/
+Trampoline.class via the boot URLClassPath it fell back to the bootstrap loader,
+which defined Trampoline with the null loader, so Trampoline.<clinit> threw
+"Trampoline must not be defined by the bootstrap class loader" (forum 0.5.3,
+running SwingDemo / VmSuite).
+
+Fix: expose sun.boot.class.path as ';'-separated ABSOLUTE Unix-form entries
+anchored at java.home (amigaBootClassPathProperty in class.c), the same shape
+setClassPath gives the app -cp.  The raw C bootpath stays ':'-joined
+(parseBootClassPath still splits on ':' for the VM's own loader) -- this builds a
+SEPARATE property string.  Also make classlibDefaultEndorsedDirs Amiga-relative
+("lib/endorsed") like classlibDefaultExtDirs, so java.endorsed.dirs carries no
+volume ':' either.
+
+Verified on QEMU: sun.boot.class.path now ';'-joined absolute; getSystemResource
+("java/lang/Object.class") resolves; java.beans.Expression->MethodUtil->Trampoline
+returns 5; SwingDemo opens with no requester.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+---
+ src/class.c                  | 56 ++++++++++++++++++++++++++++++++++++
+ src/classlib/openjdk/class.c | 11 +++++++
+ src/properties.c             | 15 ++++++++++
+ 3 files changed, 82 insertions(+)
+
+diff --git a/src/class.c b/src/class.c
+index 4a09e67..4f988b8 100644
+--- a/src/class.c
++++ b/src/class.c
+@@ -2302,6 +2302,62 @@ static char *amigaClassPath(char *cp) {
+     *o = '\0';
+     return out;
+ }
++
++/* Build the Java-facing value of the "sun.boot.class.path" property.  The C-level
++   boot path (getBootClassPath()) is a ':'-separated list of colon-free RELATIVE
++   names (niopatch.zip, rt.jar, ..., classes) -- ':' is what JamVM's own
++   parseBootClassPath() splits on, so the raw bootpath MUST stay ':'-joined for the
++   VM's intrinsic boot class search.  But on AmigaOS path.separator is ';' (':' is
++   the volume separator), and OpenJDK's sun.misc.Launcher.getBootstrapClassPath()
++   splits sun.boot.class.path on File.pathSeparator (= path.separator).  Exposing
++   the raw ':'-joined value therefore makes Java read it as ONE bogus entry
++   "niopatch.zip:resources.jar:..." -- whose leading "niopatch.zip:" AmigaDOS treats
++   as a missing volume (the "Please insert volume niopatch.zip" requester), and every
++   getBootstrapResource() then fails.  That in turn breaks sun.reflect.misc.MethodUtil:
++   its findClass can't read sun/reflect/misc/Trampoline.class via the (broken) boot
++   URLClassPath, so loadClass falls through to the bootstrap loader, which DOES find
++   Trampoline in rt.jar and defines it with the null loader -- and Trampoline.<clinit>
++   throws "Trampoline must not be defined by the bootstrap class loader".
++     Re-emit the list as ';'-separated ABSOLUTE Unix-form entries anchored at
++   java.home ("/<java.home>/<name>") -- the same shape setClassPath gives the app -cp
++   (amigaClassPath) -- so the boot URLClassPath resolves each jar to the real file
++   (the native open chokepoint strips the leading '/'), with no volume in leading
++   position.  This is a SEPARATE string: it does not mutate the global bootpath the
++   VM's own class loading relies on. */
++char *amigaBootClassPathProperty(void) {
++    char *bcp  = getBootClassPath();
++    char *home = getJavaHome();
++    int hlen, n, entries, i;
++    char *out, *o;
++
++    if(bcp == NULL)
++        return NULL;
++    if(home == NULL)
++        home = "";
++    hlen = strlen(home);
++    n = strlen(bcp);
++
++    for(entries = 1, i = 0; i < n; i++)   /* one entry per ':' plus one */
++        if(bcp[i] == ':') entries++;
++    out = o = sysMalloc(n + entries * (hlen + 2) + 1);
++
++    for(i = 0; i < n; ) {
++        int s = i;
++        while(i < n && bcp[i] != ':') i++;        /* entry = bcp[s..i) (colon-free) */
++        if(i > s && bcp[s] != '/') {              /* make absolute, anchored at java.home */
++            *o++ = '/';
++            if(hlen) {
++                memcpy(o, home, hlen); o += hlen;
++                if(home[hlen - 1] != ':')         /* "Volume:" already ends in the sep */
++                    *o++ = '/';
++            }
++        }
++        memcpy(o, &bcp[s], i - s); o += i - s;
++        if(i < n) { *o++ = ';'; i++; }            /* ':' list separator -> ';' */
++    }
++    *o = '\0';
++    return out;
++}
+ #endif
+ 
+ void setClassPath(InitArgs *args) {
+diff --git a/src/classlib/openjdk/class.c b/src/classlib/openjdk/class.c
+index ef9c885..b4ce04f 100644
+--- a/src/classlib/openjdk/class.c
++++ b/src/classlib/openjdk/class.c
+@@ -183,6 +183,16 @@ char *classlibDefaultExtDirs() {
+ }
+ #endif
+ 
++#ifdef __amigaos4__
++/* Relative (CWD = install dir), colon-free -- like classlibDefaultExtDirs above.
++   The Unix "<java.home>/lib/endorsed" form would carry a volume ':' (e.g.
++   "SYS:Java/lib/endorsed"); exposed as java.endorsed.dirs under path.separator ';'
++   that leading "SYS:" token is a volume reference sun.misc.Launcher would resolve. */
++char *classlibDefaultEndorsedDirs() {
++    char *endorsed_dirs = sysMalloc(sizeof("lib/endorsed"));
++    return strcpy(endorsed_dirs, "lib/endorsed");
++}
++#else
+ char *classlibDefaultEndorsedDirs() {
+     char *java_home = getJavaHome();
+     char *endorsed_dirs = sysMalloc(strlen(java_home) +
+@@ -190,6 +200,7 @@ char *classlibDefaultEndorsedDirs() {
+ 
+     return strcat(strcpy(endorsed_dirs, java_home), "/lib/endorsed");
+ }
++#endif
+ 
+ char *classlibExternalClassName(Class *class) {
+     ClassBlock *cb = CLASS_CB(class);
+diff --git a/src/properties.c b/src/properties.c
+index 9dd6bca..acd5e05 100644
+--- a/src/properties.c
++++ b/src/properties.c
+@@ -206,7 +206,22 @@ void addDefaultProperties(Object *properties) {
+ 
+     setProperty(properties, "java.home", getJavaHome());
+     setProperty(properties, "java.class.path", getClassPath());
++#ifdef __amigaos4__
++    /* sun.boot.class.path must use the Java path.separator (';' on AmigaOS) with
++       resolvable absolute entries, NOT the raw ':'-joined C boot path -- otherwise
++       sun.misc.Launcher misreads it as one "niopatch.zip:..." entry, popping a bogus
++       "Please insert volume niopatch.zip" requester and breaking getBootstrapResource()
++       (which in turn makes sun.reflect.misc.MethodUtil's Trampoline lookup fall back to
++       the bootstrap loader and throw).  See amigaBootClassPathProperty() in class.c. */
++    {
++        extern char *amigaBootClassPathProperty(void);
++        char *bcp = amigaBootClassPathProperty();
++        setProperty(properties, "sun.boot.class.path", bcp);
++        sysFree(bcp);
++    }
++#else
+     setProperty(properties, "sun.boot.class.path", getBootClassPath());
++#endif
+     setProperty(properties, "sun.boot.library.path", getBootDllPath());
+     setProperty(properties, "java.library.path", getDllPath());
+     setProperty(properties, "java.endorsed.dirs", getEndorsedDirs());
 -- 
 2.49.0.windows.1
 

@@ -23,7 +23,8 @@ echo "=== compiling test suite ==="
 "$JAVAC" -source 8 -target 8 -encoding UTF-8 -bootclasspath "$RT" \
     -d "$TC/classes" \
     /work/tests/regression/VmSuite.java /work/tests/regression/KeyBindTest.java \
-    /work/tests/regression/CloseTest.java /work/tests/regression/VersionGateTest.java
+    /work/tests/regression/CloseTest.java /work/tests/regression/VersionGateTest.java \
+    /work/tests/regression/BootClassPathTest.java
 
 # Version-gate fixture: a normal Java 8 class whose class-file major version is
 # bumped 52 -> 53 (Java 9), so the VM must reject it with
